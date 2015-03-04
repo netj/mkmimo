@@ -8,6 +8,9 @@
       , "url" : "https://github.com/netj/mkmimo.git"
       },
     "author": "Jaeho Shin <netj@cs.stanford.edu>",
+    "scripts": {
+        "test": "make test"
+    },
     "bin": {
         "mkmimo": "./mkmimo"
     },
