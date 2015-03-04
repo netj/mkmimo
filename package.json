@@ -1,6 +1,6 @@
 {
     "name": "mkmimo",
-    "version": "v0.0.1",
+    "version": "v0.0.2",
     "description": "Creates a multiple-input multiple-output pipe that can basically connect many parallel processes to stream data without blocking.",
     "homepage": "https://github.com/netj/mkmimo",
     "repository" :

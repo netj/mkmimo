@@ -40,14 +40,15 @@ outputStreams =
 canReadFrom = []
 canWriteTo = (yes for output in outputStreams)
 numInputsClosed = 0
+numReadableInputs = 0
 numWritableOutputs = outputStreams.length
-canRead = (i) -> ->  canReadFrom[i] = yes
+canRead = (i) -> ->  canReadFrom[i] = yes; ++numReadableInputs
 canWrite = (j) -> -> canWriteTo[j] = yes; ++numWritableOutputs
 closedInput = (i) -> -> ++numInputsClosed
 # and the main pumping function
 j = -1
 pump = ->
-    if numWritableOutputs > 0
+    if numWritableOutputs > 0 and numReadableInputs > 0
         for input,i in inputStreams when canReadFrom[i]
             line = input.read()
             if line?  # write to next available output
@@ -64,10 +65,11 @@ pump = ->
                 break unless numWritableOutputs > 0
             else  # mark input as drained
                 canReadFrom[i] = no
+                --numReadableInputs
     # repeat pumping until all inputs are closed
     if numInputsClosed == inputStreams.length
         output.end() for output in outputStreams
-    else if numWritableOutputs > 0
+    else if numWritableOutputs > 0 and numReadableInputs > 0
         setImmediate pump
     else
         setTimeout pump, PUMP_IDLE_MS
