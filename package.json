@@ -1,0 +1,21 @@
+{
+    "name": "mkmimo",
+    "version": "v0.0.1",
+    "description": "Creates a multiple-input multiple-output pipe that can basically connect many parallel processes to stream data without blocking.",
+    "homepage": "https://github.com/netj/mkmimo",
+    "repository" :
+      { "type" : "git"
+      , "url" : "https://github.com/netj/mkmimo.git"
+      },
+    "author": "Jaeho Shin <netj@cs.stanford.edu>",
+    "bin": {
+        "mkmimo": "./mkmimo"
+    },
+    "dependencies": {
+        "byline": ">=4.2.1",
+        "coffee-script": ">=1.9.1"
+    },
+    "engines": {
+        "node": ">=0.10.0"
+    }
+}
