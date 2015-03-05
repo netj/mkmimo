@@ -15,7 +15,8 @@ fs = require "fs"
 byline = require "byline"
 args = process.argv[2..]
 
-PUMP_IDLE_MS = 100 #ms
+PUMP_IDLE_MS = 1000 #ms
+NUM_LINES_TO_READ_PER_INPUT = 10
 
 # find input and output paths from arguments
 ioSepIdx = args.indexOf ">"
@@ -37,42 +38,40 @@ outputStreams =
         fs.createWriteStream path
 
 # callbacks for maintaining stream states
-canReadFrom = []
-canWriteTo = (yes for output in outputStreams)
+willPump = null
+inputsReadable = []
+outputsWritable = (o for o in outputStreams)
 numInputsClosed = 0
-numReadableInputs = 0
-numWritableOutputs = outputStreams.length
-canRead = (i) -> ->  canReadFrom[i] = yes; ++numReadableInputs
-canWrite = (j) -> -> canWriteTo[j] = yes; ++numWritableOutputs
+canRead = (i) -> ->  inputsReadable.push inputStreams[i];   willPump = setImmediate pump unless willPump?
+canWrite = (j) -> -> outputsWritable.push outputStreams[j]; willPump = setImmediate pump unless willPump?
 closedInput = (i) -> -> ++numInputsClosed
 # and the main pumping function
-j = -1
+j = 0
 pump = ->
-    if numWritableOutputs > 0 and numReadableInputs > 0
-        for input,i in inputStreams when canReadFrom[i]
-            line = input.read()
-            if line?  # write to next available output
-                for k in [0...outputStreams.length]
-                    j = (j + 1) % outputStreams.length
-                    continue unless canWriteTo[j]
-                    output = outputStreams[j]
-                    output.write line
-                    unless output.write "\n"
-                        # mark output as full
-                        canWriteTo[j] = no
-                        --numWritableOutputs
+    willPump = null
+    if inputsReadable.length > 0 and outputsWritable.length > 0
+        i = inputsReadable.length
+        while i--
+            input = inputsReadable[i]
+            for k in [0...NUM_LINES_TO_READ_PER_INPUT]
+                # read a line from input
+                unless (line = input.read())?
+                    # mark input as drained if no lines came back
+                    inputsReadable.splice i, 1
                     break
-                break unless numWritableOutputs > 0
-            else  # mark input as drained
-                canReadFrom[i] = no
-                --numReadableInputs
+                # write to next available output
+                output = outputsWritable[j = (j - 1) %% outputsWritable.length]
+                output.write line
+                unless output.write "\n"
+                    # mark output as full if write wasn't smooth
+                    outputsWritable.splice j, 1
+                    break unless outputsWritable.length > 0
+            break unless outputsWritable.length > 0
     # repeat pumping until all inputs are closed
     if numInputsClosed == inputStreams.length
         output.end() for output in outputStreams
-    else if numWritableOutputs > 0 and numReadableInputs > 0
-        setImmediate pump
-    else
-        setTimeout pump, PUMP_IDLE_MS
+    else if inputsReadable.length > 0 and outputsWritable.length > 0
+        willPump = setImmediate pump
 
 # read lines from inputs
 for stream,i in inputStreams
