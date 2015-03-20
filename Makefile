@@ -1,5 +1,7 @@
 # Makefile for mkmimo
 
+CFLAGS += -Wall
+
 mkmimo: mkmimo.o
 	$(CC) -o $@ $(LDFLAGS) $^
 
