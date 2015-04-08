@@ -85,6 +85,7 @@ int init_buffer(Buffer *buf, Input *input) {
     buf->size = buffer_size;
     buf->begin = 0;  // inclusive
     buf->end = 0;    // exclusive
+    buf->end_of_last_record = -1;
     buf->input = input;
     return buffer_size;
 }
@@ -118,7 +119,10 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
         for (int i = 0; i < num_in; ++i) {
             char *name = argv[1 + i];
             int fd = open(name, O_RDONLY | O_NONBLOCK);
-            if (fd < 0) return 1;
+            if (fd < 0) {
+                perror("open");
+                return 1;
+            }
             Input this = {
                 .fd = fd, .name = name, .state = READY,
             };
@@ -141,7 +145,10 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
             char *name = argv[base_idx_out + i];
             int fd = open(name, O_WRONLY | O_NONBLOCK | O_CREAT | O_TRUNC,
                           S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-            if (fd < 0) return 2;
+            if (fd < 0) {
+                perror("open");
+                return 2;
+            }
             Output this = {
                 .fd = fd, .name = name, .buffer = NULL, .state = IDLE,
             };
@@ -154,7 +161,7 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
 int read_records_from(Inputs *inputs) {
     int num_input_buffers_ready = 0;
     // TODO select/poll/epoll/kqueue on them
-    static struct pollfd *fds = NULL;
+    struct pollfd *fds = NULL;
     if (fds == NULL) {
         fds = calloc(inputs->num_inputs, sizeof(struct pollfd));
         for (int i = 0; i < inputs->num_inputs; ++i) {
@@ -173,6 +180,8 @@ int read_records_from(Inputs *inputs) {
         // read from available inputs
         for (int i = 0; i < inputs->num_inputs; ++i) {
             Input *input = &inputs->inputs[i];
+            DEBUG("%s: state=%d, revents=%d", input->name, input->state,
+                  fds[i].revents);
             if (!(input->state == READY && (fds[i].revents & POLLIN)))
                 // skip inputs that aren't ready for another read
                 // skip inputs that don't have data ready
@@ -208,6 +217,7 @@ int read_records_from(Inputs *inputs) {
                         }
                     } else if (num_bytes_read == 0) {
                         // EOF reached, close the input
+                        DEBUG("%s: closed", input->name);
                         close(input->fd);
                         input->state = CLOSED;
                         ++inputs->num_closed;
@@ -320,9 +330,12 @@ int write_pending_records_to(Outputs *outputs) {
             }
         }
         // move buffer contents to front
-        memmove(buf->data + 0, buf->data + buf->begin, buf->end - buf->begin);
-        buf->end -= buf->begin;
-        buf->begin = 0;
+        if (buf->begin > 0) {
+            memmove(buf->data + 0, buf->data + buf->begin,
+                    buf->end - buf->begin);
+            buf->end -= buf->begin;
+            buf->begin = 0;
+        }
         // reflect input's state if output is done
         if (output->state == IDLE) {
             if (output->buffer->input->state != CLOSED)
