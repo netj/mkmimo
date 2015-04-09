@@ -252,13 +252,16 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            p->events = output->is_busy ? POLLOUT : 0;
+            // XXX setting POLLOUT causes busy waiting
+            p->events = 0;  // XXX output->is_busy ? POLLOUT : 0;
+            // DEBUG("%s: poll->events = %d", output->name, p->events);
             p->revents = 0;
         }
     }
     // use poll(2) to wait for any I/O events
     DEBUG("polling %d inputs/outputs", num_fds_to_poll);
-    int num_events = poll(fds, num_fds_to_poll, -1 /* wait indefinitely */);
+    int num_events = poll(fds, num_fds_to_poll,
+                          1000 /*msec*/);  //-1 /* wait indefinitely */);
     if (num_events < 0) {
         perror("poll");
         return 0;
@@ -273,8 +276,9 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
                     ++inputs->num_readable;
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                if ((output->is_writable = !!(p->revents & POLLOUT)))
-                    ++outputs->num_writable;
+                // TODO handle POLLHUP
+                // XXX is_writable may be useless with poll(2)?
+                if ((output->is_writable = 1)) ++outputs->num_writable;
             }
         }
         DEBUG("poll returned, found %d readable inputs, %d writable outputs",
@@ -348,7 +352,7 @@ int read_from_available(Inputs *inputs) {
             // stop reading if at least one record exists in the buffer
             input->is_buffered = 1;
             ++num_input_buffers_ready;
-        } else if (!input->is_closed) {
+        } else if (!input->is_closed && buf->size == buf->capacity) {
             // enlarge the buffer so a record that is larger than the current
             // buffer capacity can be read
             void *buf_larger = realloc(buf->data, buf->capacity * 2);
@@ -382,46 +386,43 @@ int write_to_available(Outputs *outputs) {
         // skip outputs that aren't busy, i.e., have empty buffers
         if (!output->is_busy) continue;
         Buffer *buf = output->buffer;
-        // skip outputs that have empty buffers, marking them as not busy
-        if (buf->size == 0) {
+        // write bufferred data to the output
+        int num_bytes_writable = buf->size;
+        if (num_bytes_writable <= 0) {
+            // stop writing if there's nothing to write
             output->is_busy = 0;
             continue;
         }
-        // write bufferred data to the output
-        for (;;) {
-            int num_bytes_writable = buf->end_of_last_record + 1 - buf->begin;
-            if (num_bytes_writable <= 0) {
-                // stop writing if there's nothing to write
-                output->is_busy = 0;
-                break;
-            }
-            int num_bytes_written =
-                write(output->fd, buf->data + buf->begin, num_bytes_writable);
+        int num_bytes_written =
+            write(output->fd, buf->data + buf->begin, num_bytes_writable);
+        if (num_bytes_written >= 0) {
+            // normal write
             DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
-            if (num_bytes_written > 0) {
-                // normal write
-                buf->begin += num_bytes_written;
-            } else if (num_bytes_written == 0) {
-                // zero bytes written, will try again later
+            buf->begin += num_bytes_written;
+            buf->size -= num_bytes_written;
+            if (buf->size == 0) {
+                output->is_busy = 0;
+            } else {
                 output->is_busy = 1;
                 ++num_outputs_pending;
-                break;
+                DEBUG("%s: %d bytes still left", output->name, buf->size);
+            }
+        } else {
+            if (errno == EAGAIN) {
+                // output is busy, will try again later
+                DEBUG("%s: output busy", output->name);
+                output->is_busy = 1;
+                ++num_outputs_pending;
+                DEBUG("%s: %d bytes still left", output->name, buf->size);
+                continue;
             } else {
-                if (errno == EAGAIN) {
-                    // output is busy, will try again later
-                    output->is_busy = 1;
-                    ++num_outputs_pending;
-                    break;
-                } else {
-                    // something went wrong
-                    perror("write");
-                    DEBUG("%s: output closed due to error", output->name);
-                    close(output->fd);
-                    output->is_closed = 1;
-                    ++outputs->num_closed;
-                    // TODO the buffer should be routed to another output
-                    break;
-                }
+                // something went wrong
+                perror("write");
+                DEBUG("%s: output closed due to error", output->name);
+                close(output->fd);
+                output->is_closed = 1;
+                ++outputs->num_closed;
+                // XXX the buffer should be routed to another output
             }
         }
     }
@@ -521,7 +522,8 @@ int main(int argc, char *argv[]) {
     while (records_are_flowing_between(&inputs, &outputs)) {
         write_to_available(&outputs);
         if (read_from_available(&inputs) > 0)
-            exchange_buffered_records(&inputs, &outputs);
+            while (exchange_buffered_records(&inputs, &outputs) > 0)
+                write_to_available(&outputs);
         DEBUG("%s", "----------------------------------------");
     }
 
