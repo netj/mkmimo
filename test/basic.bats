@@ -55,9 +55,9 @@ teardown() {
     cmp <(seq 1 $(($numins * $numlines))) <(sort -n out)
 }
 
-@test "multi-input multi-output (3 inputs, 5 outputs)" {
-    numins=3 numouts=5
-    numlines=1000
+@test "multi-input multi-output (17 inputs, 83 outputs)" {
+    numins=17 numouts=83
+    numlines=10000
 
     # assemble process substitution commands for input/output
     inputs=
