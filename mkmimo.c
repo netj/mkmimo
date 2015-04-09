@@ -9,7 +9,11 @@
 #include <poll.h>
 #include <errno.h>
 
+#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)      // 4096 bytes
 static int POLL_TIMEOUT_MSEC = 100 /*msec*/;  // -1 /* wait indefinitely */
+
+static char NAME_FOR_STDIN[] = "-";
+static char NAME_FOR_STDOUT[] = "-";
 
 #ifdef DEBUG
 #undef DEBUG
@@ -98,10 +102,7 @@ typedef struct {
     } while (0)
 #define SET(item, flag, flag_val) SET_FLAG(item##s, item, flag, flag_val)
 
-static char NAME_FOR_STDIN[] = "-";
-static char NAME_FOR_STDOUT[] = "-";
-
-static int buffer_size = BUFSIZ;
+static int buffer_size = DEFAULT_BUFFER_SIZE;
 Buffer *new_buffer() {
     Buffer *buf = malloc(sizeof(Buffer));
     if (buf == NULL) {
@@ -553,8 +554,8 @@ int main(int argc, char *argv[]) {
         buffer_size = atoi(blocksize);
         if (buffer_size <= 0) {
             fprintf(stderr, "%d: Invalid BLOCKSIZE, using default %d\n",
-                    buffer_size, BUFSIZ);
-            buffer_size = BUFSIZ;
+                    buffer_size, DEFAULT_BUFFER_SIZE);
+            buffer_size = DEFAULT_BUFFER_SIZE;
         }
     }
 
