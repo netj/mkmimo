@@ -16,3 +16,7 @@ export PATH
 test: mkmimo
 	cd test && ! type bats >/dev/null || bats *.bats
 .PHONY: test
+
+clean:
+	rm -f mkmimo *.o
+.PHONY: clean
