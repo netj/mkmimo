@@ -9,7 +9,7 @@
 #include <poll.h>
 #include <errno.h>
 
-static int POLL_TIMEOUT_MSEC = 1000 /*msec*/;  // -1 /* wait indefinitely */
+static int POLL_TIMEOUT_MSEC = 100 /*msec*/;  // -1 /* wait indefinitely */
 
 #ifdef DEBUG
 #undef DEBUG
@@ -58,18 +58,6 @@ typedef struct {
     int num_buffered;
 } Inputs;
 
-#define SET_FLAG(items, item, flag, flag_val)      \
-    do {                                           \
-        if (!!(item)->is_##flag != !!(flag_val)) { \
-            (item)->is_##flag = !!(flag_val);      \
-            if ((flag_val))                        \
-                ++(items)->num_##flag;             \
-            else                                   \
-                --(items)->num_##flag;             \
-        }                                          \
-    } while (0)
-#define SET(item, flag, flag_val) SET_FLAG(item##s, item, flag, flag_val)
-
 typedef struct output {
     // output file descriptor
     int fd;
@@ -95,6 +83,20 @@ typedef struct {
     // how many outputs have non-empty buffers
     int num_busy;
 } Outputs;
+
+// a shorthand for updating both is_XYZ flag of an input/output and num_XYZ
+// counts
+#define SET_FLAG(items, item, flag, flag_val)      \
+    do {                                           \
+        if (!!(item)->is_##flag != !!(flag_val)) { \
+            (item)->is_##flag = !!(flag_val);      \
+            if ((flag_val))                        \
+                ++(items)->num_##flag;             \
+            else                                   \
+                --(items)->num_##flag;             \
+        }                                          \
+    } while (0)
+#define SET(item, flag, flag_val) SET_FLAG(item##s, item, flag, flag_val)
 
 static char NAME_FOR_STDIN[] = "-";
 static char NAME_FOR_STDOUT[] = "-";
@@ -538,6 +540,8 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     }
     // TODO any closed but busy output's buffer should be swapped with another
     // idle output
+    // TODO similarly a straggler output's buffer could be reallocated to
+    // another faster one
     DEBUG("exchanged %d input-output pairs", num_exchanges);
     return num_exchanges;
 }
