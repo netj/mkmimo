@@ -20,41 +20,40 @@ typedef struct input_buffer {
     // memory
     void *data;
     // capacity
-    int size;
+    int capacity;
     // the byte range that contains data
-    int begin, end;
+    int begin, size;
     // where a full delimiter is found in the range
     int end_of_last_record;
-    // owner input
-    struct input *input;
 } Buffer;
 
-enum InputState {
-    READY,
-    BUFFERED,
-    ROUTED,
-    CLOSED,
-};
 typedef struct input {
     // input file descriptor
     int fd;
     // name of the file
     char *name;
     // the buffer for reading
-    Buffer buffer;
-    // state of the input: whether it's ready to read, buffered, or closed
-    enum InputState state;
+    // TODO change this to pointer so buffer can be swapped btwn outputs
+    Buffer *buffer;
+    // state flags
+    int is_closed;
+    int is_readable;
+    int is_buffered;
 } Input;
 typedef struct {
+    // given inputs
     Input *inputs;
     int num_inputs;
+    // this points to the index to insert the next closed one
+    int last_closed;
+    // how many are already closed
     int num_closed;
+    // how many can be read without blocking
+    int num_readable;
+    // how many have buffers ready for output
+    int num_buffered;
 } Inputs;
-enum OutputState {
-    IDLE,
-    BUSY,
-    DONE,
-};
+
 typedef struct output {
     // output file descriptor
     int fd;
@@ -62,32 +61,45 @@ typedef struct output {
     char *name;
     // pointer to the buffer for writing
     Buffer *buffer;
-    // state of the output
-    enum OutputState state;
+    // state flags
+    int is_closed;
+    int is_writable;
+    int is_busy;
 } Output;
 typedef struct {
+    // given outputs
     Output *outputs;
     int num_outputs;
+    int last_closed;  // this points to the index to insert the next closed one
+    int next_output;  // this points to the last used output for exchange
+    // how many are already closed
+    int num_closed;
+    // how many outputs can be written without blocking
+    int num_writable;
+    // how many outputs have non-empty buffers
     int num_busy;
-    int last_written_output;
 } Outputs;
 
 static char NAME_FOR_STDIN[] = "-";
 static char NAME_FOR_STDOUT[] = "-";
 
 static int buffer_size = BUFSIZ;
-int init_buffer(Buffer *buf, Input *input) {
+Buffer *new_buffer() {
+    Buffer *buf = malloc(sizeof(Buffer));
+    if (buf == NULL) {
+        perror("malloc");
+        return NULL;
+    }
     buf->data = malloc(buffer_size);
     if (buf->data == NULL) {
         perror("malloc");
-        return -1;
+        return NULL;
     }
-    buf->size = buffer_size;
-    buf->begin = 0;  // inclusive
-    buf->end = 0;    // exclusive
+    buf->capacity = buffer_size;
+    buf->begin = 0;
+    buf->size = 0;
     buf->end_of_last_record = -1;
-    buf->input = input;
-    return buffer_size;
+    return buf;
 }
 
 int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
@@ -109,10 +121,14 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
         inputs->num_inputs = 1;
         inputs->inputs = calloc(1, sizeof(struct input));
         struct input this = {
-            .fd = 0, .name = NAME_FOR_STDIN, .state = READY,
+            .fd = 0,
+            .name = NAME_FOR_STDIN,
+            .buffer = new_buffer(),
+            .is_closed = 0,
+            .is_readable = 0,
+            .is_buffered = 0,
         };
         inputs->inputs[0] = this;
-        init_buffer(&inputs->inputs[0].buffer, &inputs->inputs[0]);
     } else {
         inputs->num_inputs = num_in;
         inputs->inputs = calloc(num_in, sizeof(Input));
@@ -124,18 +140,28 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
                 return 1;
             }
             Input this = {
-                .fd = fd, .name = name, .state = READY,
+                .fd = fd,
+                .name = name,
+                .buffer = new_buffer(),
+                .is_closed = 0,
+                .is_readable = 0,
+                .is_buffered = 0,
             };
             inputs->inputs[i] = this;
-            init_buffer(&inputs->inputs[i].buffer, &inputs->inputs[i]);
         }
     }
+    inputs->last_closed = inputs->num_inputs;
     if (num_out == 0) {
         // default to stdout
         outputs->num_outputs = 1;
         outputs->outputs = calloc(1, sizeof(Output));
         Output this = {
-            .fd = 1, .name = NAME_FOR_STDOUT, .buffer = NULL, .state = IDLE,
+            .fd = 1,
+            .name = NAME_FOR_STDOUT,
+            .buffer = new_buffer(),
+            .is_closed = 0,
+            .is_writable = 0,
+            .is_busy = 0,
         };
         outputs->outputs[0] = this;
     } else {
@@ -150,200 +176,334 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
                 return 2;
             }
             Output this = {
-                .fd = fd, .name = name, .buffer = NULL, .state = IDLE,
+                .fd = fd,
+                .name = name,
+                .buffer = new_buffer(),
+                .is_closed = 0,
+                .is_writable = 0,
+                .is_busy = 0,
             };
             outputs->outputs[i] = this;
         }
     }
+    outputs->last_closed = outputs->num_outputs;
     return 0;
 }
 
-int read_records_from(Inputs *inputs) {
-    int num_input_buffers_ready = 0;
+int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
+    if (inputs->num_closed == inputs->num_inputs && inputs->num_buffered == 0 &&
+        outputs->num_busy == 0)
+        return 0;
     // TODO select/poll/epoll/kqueue on them
-    struct pollfd *fds = NULL;
+    static struct pollfd *fds = NULL;
+    static int num_inputs_outputs = 0;
     if (fds == NULL) {
-        fds = calloc(inputs->num_inputs, sizeof(struct pollfd));
-        for (int i = 0; i < inputs->num_inputs; ++i) {
+        // allocate poll(2) arguments only once
+        num_inputs_outputs = inputs->num_inputs + outputs->num_outputs;
+        fds = calloc(num_inputs_outputs, sizeof(struct pollfd));
+    }
+    // move closed inputs/outputs to the end and exclude from polling
+    if (inputs->num_inputs - inputs->last_closed < inputs->num_closed)
+        for (int i = 0; i < inputs->last_closed; ++i) {
             Input *input = &inputs->inputs[i];
-            fds[i].fd = input->fd;
-            fds[i].events = POLLIN;
-            fds[i].revents = 0;
+            if (!input->is_closed) continue;
+            input->is_readable = 0;
+            // find the last input not closed
+            int j = inputs->last_closed - 1;
+            while (j > i && inputs->inputs[j].is_closed) --j;
+            inputs->last_closed = j;
+            // stop if everything past this input is closed
+            if (j <= i) break;
+            // move the closed one to the end
+            DEBUG("moving closed input %s to back: %d", input->name, j);
+            Input tmp = *input;
+            *input = inputs->inputs[j];
+            inputs->inputs[j] = tmp;
+        }
+    if (outputs->num_outputs - outputs->last_closed < outputs->num_closed)
+        for (int i = 0; i < outputs->last_closed; ++i) {
+            Output *output = &outputs->outputs[i];
+            if (!output->is_closed) continue;
+            output->is_writable = 0;
+            // find the last output not closed
+            int j = outputs->last_closed - 1;
+            while (j > i && outputs->outputs[j].is_closed) --j;
+            outputs->last_closed = j;
+            // stop if everything past this output is closed
+            if (j <= i) break;
+            // move the closed one to the end
+            DEBUG("moving closed output %s to back", output->name);
+            Output tmp = *output;
+            *output = outputs->outputs[j];
+            outputs->outputs[j] = tmp;
+        }
+    // set up arguments for poll(2)
+    int num_fds_to_poll =
+        num_inputs_outputs - inputs->num_closed - outputs->num_closed;
+    int num_inputs_to_poll = inputs->num_inputs - inputs->num_closed;
+    if (num_fds_to_poll == 0) return 0;
+    for (int i = 0; i < num_fds_to_poll; ++i) {
+        struct pollfd *p = &fds[i];
+        if (i < num_inputs_to_poll) {
+            Input *input = &inputs->inputs[i];
+            p->fd = input->fd;
+            p->events = POLLIN;
+            p->revents = 0;
+        } else {
+            Output *output = &outputs->outputs[i - num_inputs_to_poll];
+            p->fd = output->fd;
+            p->events = POLLOUT;
+            p->revents = 0;
         }
     }
-    int res = poll(fds, inputs->num_inputs, -1 /* wait indefinitely */);
-    if (res < 0) {
+    // use poll(2) to wait for any I/O events
+    DEBUG("polling %d inputs/outputs", num_fds_to_poll);
+    int num_events = poll(fds, num_fds_to_poll, -1 /* wait indefinitely */);
+    if (num_events < 0) {
         perror("poll");
-        return -1;
+        return 0;
+    } else if (num_events > 0) {
+        // update readable/writable states of inputs and outputs
+        inputs->num_readable = outputs->num_writable = 0;
+        for (int i = 0; i < num_fds_to_poll; ++i) {
+            struct pollfd *p = &fds[i];
+            if (i < num_inputs_to_poll) {
+                Input *input = &inputs->inputs[i];
+                if ((input->is_readable = !!(p->revents & POLLIN)))
+                    ++inputs->num_readable;
+            } else {
+                Output *output = &outputs->outputs[i - num_inputs_to_poll];
+                if ((output->is_writable = !!(p->revents & POLLOUT)))
+                    ++outputs->num_writable;
+            }
+        }
+        DEBUG("poll returned, found %d readable inputs, %d writable outputs",
+              inputs->num_readable, outputs->num_writable);
+        return 1;
+    } else {
+        DEBUG("%s", "poll timeout, found no I/O events");
+        // no events
+        return 1;
     }
-    if (res > 0) {
-        // read from available inputs
-        for (int i = 0; i < inputs->num_inputs; ++i) {
-            Input *input = &inputs->inputs[i];
-            DEBUG("%s: state=%d, revents=%d", input->name, input->state,
-                  fds[i].revents);
-            if (!(input->state == READY && (fds[i].revents & POLLIN)))
-                // skip inputs that aren't ready for another read
-                // skip inputs that don't have data ready
-                // TODO skip buffers busy for writing
-                continue;
-            Buffer *buf = &input->buffer;
-            // read from input to fill its buffer with at least one record
+}
+
+int read_from_available(Inputs *inputs) {
+    if (inputs->num_readable == 0) return 0;
+    int num_input_buffers_ready = 0;
+    // read from available inputs
+    for (int i = 0; i < inputs->num_inputs; ++i) {
+        Input *input = &inputs->inputs[i];
+        // skip inputs that are closed or don't have data ready
+        if (input->is_closed || !input->is_readable) continue;
+        Buffer *buf = input->buffer;
+        // skip inputs whose buffer is full
+        if (buf->size == buf->capacity) continue;
+        int scan_end_of_record_down_to = buf->begin;
+        // read from input to fill its buffer with at least one record
+        for (;;) {
+            // try to fill the current buffer
             for (;;) {
-                // TODO move buffer data to front if (buf->begin > 0)
-                // try to fill the current buffer
-                for (;;) {
-                    int num_bytes_readable =
-                        buf->size - (buf->end - buf->begin);
-                    if (num_bytes_readable <= 0)
-                        // stop reading when buffer is full
+                int num_bytes_readable = buf->capacity - buf->size;
+                if (num_bytes_readable <= 0)
+                    // stop reading when buffer is full
+                    break;
+                DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
+                int num_bytes_read =
+                    read(input->fd, buf->data + buf->begin + buf->size,
+                         num_bytes_readable);
+                DEBUG("%s: %d bytes read", input->name, num_bytes_read);
+                if (num_bytes_read < 0) {
+                    if (errno == EAGAIN)
+                        // stop reading when it's exhausted
                         break;
-                    DEBUG("%s: can read %d bytes", input->name,
-                          num_bytes_readable);
-                    int num_bytes_read = read(input->fd, buf->data + buf->end,
-                                              num_bytes_readable);
-                    DEBUG("%s: %d bytes read", input->name, num_bytes_read);
-                    if (num_bytes_read < 0) {
-                        if (errno == EAGAIN)
-                            // stop reading when it's exhausted
-                            break;
-                        else {
-                            // close the input on other errors
-                            perror("read");
-                            close(input->fd);
-                            input->state = CLOSED;
-                            ++inputs->num_closed;
-                            break;
-                        }
-                    } else if (num_bytes_read == 0) {
-                        // EOF reached, close the input
-                        DEBUG("%s: closed", input->name);
+                    else {
+                        // close the input on other errors
+                        perror("read");
+                        DEBUG("%s: input closed due to error", input->name);
                         close(input->fd);
-                        input->state = CLOSED;
+                        input->is_closed = 1;
                         ++inputs->num_closed;
                         break;
-                    } else {
-                        // read normally, reflect sizes
-                        buf->end += num_bytes_read;
                     }
-                }
-                // find the last record's delimiter in the buffer
-                // TODO use strrchr or a faster string matching algorithm
-                int end_of_last_record = -1;
-                for (int j = buf->end - 1; j >= buf->begin; --j) {
-                    char c = ((char *)buf->data)[j];
-                    // TODO support user defined record delimiters
-                    if (c == '\n') {
-                        end_of_last_record = j;
-                        break;
-                    }
-                }
-                DEBUG("%s: record ends at %d", input->name, end_of_last_record);
-                buf->end_of_last_record = end_of_last_record;
-                if (end_of_last_record > -1) {
-                    // stop reading if at least one record exists in the buffer
-                    if (input->state != CLOSED) input->state = BUFFERED;
-                    ++num_input_buffers_ready;
+                } else if (num_bytes_read == 0) {
+                    // EOF reached, close the input
+                    DEBUG("%s: input closed", input->name);
+                    close(input->fd);
+                    input->is_closed = 1;
+                    ++inputs->num_closed;
                     break;
                 } else {
-                    // enlarge the buffer and keep reading if a record is larger
-                    // than the buffer size
-                    void *buf_larger = realloc(buf->data, buf->size * 2);
-                    if (buf_larger != NULL) {
-                        buf->data = buf_larger;
-                        buf->size *= 2;
-                        DEBUG("%s: realloc to %d bytes", input->name,
-                              buf->size);
-                    } else {
-                        perror("realloc");
-                        // TODO handle out of memory situation
-                        break;
-                    }
+                    // read normally, reflect size increase
+                    buf->size += num_bytes_read;
+                }
+            }
+            // find the last record's delimiter in the buffer
+            // TODO use strrchr or a faster string matching algorithm
+            int end_of_last_record = -1;
+            for (int j = buf->begin + buf->size - 1;
+                 j >= scan_end_of_record_down_to; --j) {
+                char c = ((char *)buf->data)[j];
+                // TODO support user defined record delimiters
+                if (c == '\n') {
+                    end_of_last_record = j;
+                    break;
+                }
+            }
+            DEBUG("%s: record ends at %d", input->name, end_of_last_record);
+            buf->end_of_last_record = end_of_last_record;
+            if (end_of_last_record > -1) {
+                // stop reading if at least one record exists in the buffer
+                input->is_buffered = 1;
+                ++num_input_buffers_ready;
+                break;
+            } else if (!input->is_closed) {
+                // enlarge the buffer and keep reading if a record is larger
+                // than the buffer capacity
+                void *buf_larger = realloc(buf->data, buf->capacity * 2);
+                if (buf_larger != NULL) {
+                    buf->data = buf_larger;
+                    buf->capacity *= 2;
+                    DEBUG("%s: realloc to %d bytes", input->name,
+                          buf->capacity);
+                    // bound the next scan for end-of-record delimiter
+                    scan_end_of_record_down_to = buf->begin + buf->size;
+                } else {
+                    perror("realloc");
+                    // TODO handle out of memory more gracefully?
+                    abort();
+                    break;
                 }
             }
         }
     }
+    DEBUG("read from inputs %d readable, %d now buffered, was %d",
+          inputs->num_readable, num_input_buffers_ready, inputs->num_buffered);
+    inputs->num_buffered = num_input_buffers_ready;
     return num_input_buffers_ready;
 }
 
-int route_records_to_an_output(Input *input, Outputs *outputs) {
-    // find the next less busy output
-    Output *output = NULL;
-    for (int i = 0; i < outputs->num_outputs; ++i) {
-        ++outputs->last_written_output;
-        outputs->last_written_output %= outputs->num_outputs;
-        output = &outputs->outputs[outputs->last_written_output];
-        if (output->state == IDLE) break;
-    }
-    if (output == NULL) {
-        // TODO could not find an idle output
-        return -1;
-    }
-    // route the input buffer to the output
-    output->state = BUSY;
-    output->buffer = &input->buffer;
-    DEBUG("%s %d bytes routed to %s", input->name,
-          (input->buffer.end - input->buffer.begin), output->name);
-    if (input->state != CLOSED) input->state = ROUTED;
-    return 0;
-}
-
-int write_pending_records_to(Outputs *outputs) {
+int write_to_available(Outputs *outputs) {
+    if (outputs->num_writable == 0) return 0;
     int num_outputs_pending = 0;
     // write to each output its buffered records
     for (int i = 0; i < outputs->num_outputs; ++i) {
-        Output *output = &outputs->outputs[(outputs->last_written_output - i) %
-                                           outputs->num_outputs];
-        if (output->state != BUSY)
-            // look at only BUSY outputs that already have a routed buffer
-            continue;
+        Output *output = &outputs->outputs[i];
+        // skip outputs that aren't writable yet
+        if (!output->is_writable) continue;
+        // skip outputs that aren't busy, i.e., have empty buffers
+        if (!output->is_busy) continue;
         Buffer *buf = output->buffer;
-        // write all bufferred data routed to this output
+        // skip outputs that have empty buffers, marking them as not busy
+        if (buf->size == 0) {
+            output->is_busy = 0;
+            continue;
+        }
+        // write bufferred data to the output
         for (;;) {
             int num_bytes_writable = buf->end_of_last_record + 1 - buf->begin;
             if (num_bytes_writable <= 0) {
                 // stop writing if there's nothing to write
-                output->state = IDLE;
+                output->is_busy = 0;
                 break;
             }
             int num_bytes_written =
                 write(output->fd, buf->data + buf->begin, num_bytes_writable);
+            DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
             if (num_bytes_written > 0) {
                 // normal write
                 buf->begin += num_bytes_written;
             } else if (num_bytes_written == 0) {
                 // zero bytes written, will try again later
+                output->is_busy = 1;
                 ++num_outputs_pending;
                 break;
             } else {
                 if (errno == EAGAIN) {
                     // output is busy, will try again later
+                    output->is_busy = 1;
                     ++num_outputs_pending;
                     break;
                 } else {
                     // something went wrong
                     perror("write");
+                    DEBUG("%s: output closed due to error", output->name);
                     close(output->fd);
-                    output->state = DONE;
+                    output->is_closed = 1;
+                    ++outputs->num_closed;
+                    // TODO the buffer should be routed to another output
                     break;
                 }
             }
         }
-        // move buffer contents to front
-        if (buf->begin > 0) {
-            memmove(buf->data + 0, buf->data + buf->begin,
-                    buf->end - buf->begin);
-            buf->end -= buf->begin;
-            buf->begin = 0;
-        }
-        // reflect input's state if output is done
-        if (output->state == IDLE) {
-            if (output->buffer->input->state != CLOSED)
-                output->buffer->input->state = READY;
-            output->buffer = NULL;
-        }
     }
+    DEBUG("wrote to outputs %d writable, %d busy, and %d still busy",
+          outputs->num_writable, outputs->num_busy, num_outputs_pending);
+    outputs->num_busy = num_outputs_pending;
     return num_outputs_pending;
+}
+
+int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
+    int num_exchanges = 0;
+    // every buffered input should swap its buffer with an idle output
+    for (int i = 0; i < inputs->num_inputs; ++i) {
+        // stop early if it's apparent that no further pairs can be found
+        if (inputs->num_buffered <= 0) break;
+        if (outputs->num_busy == outputs->num_outputs - outputs->num_closed)
+            break;
+        // find an input whose buffer contains records
+        Input *input = &inputs->inputs[i];
+        if (!input->is_buffered) continue;
+        // find an output that isn't busy, i.e., whose buffer is free
+        Output *output = NULL;
+        for (int j = 0; j < outputs->num_outputs; ++j) {
+            ++outputs->next_output;
+            outputs->next_output %= outputs->num_outputs;
+            Output *o = &outputs->outputs[outputs->next_output];
+            if (o->is_busy) continue;
+            output = o;
+            break;
+        }
+        // stop if no idle output can be found
+        if (output == NULL) break;
+        DEBUG("routing %d bytes: %s > %s",
+              input->buffer->end_of_last_record + 1 - input->buffer->begin,
+              input->name, output->name);
+        // swap buffers between the buffered input and the idle output
+        Buffer *buf = input->buffer;
+        input->buffer = output->buffer;
+        output->buffer = buf;
+        // reset input buffer
+        input->buffer->begin = 0;
+        input->buffer->size = 0;
+        // make sure the trailing bytes at the end of input's buffer isn't lost
+        int trailing_bytes_begin =
+            buf->end_of_last_record + 1 /* length of the record separator */;
+        int num_trailing_bytes_to_copy =
+            buf->size - (trailing_bytes_begin - buf->begin);
+        if (num_trailing_bytes_to_copy > 0) {
+            DEBUG("trailing_bytes_begin=%d, num_trailing_bytes_to_copy=%d",
+                  trailing_bytes_begin, num_trailing_bytes_to_copy);
+            DEBUG("copying to %p from %p", input->buffer->data, buf->data);
+            memcpy(input->buffer->data + input->buffer->begin,
+                   buf->data + trailing_bytes_begin,
+                   num_trailing_bytes_to_copy);
+            input->buffer->size = num_trailing_bytes_to_copy;
+            // truncate size, so the trailing bytes are ignored when output
+            buf->size -= num_trailing_bytes_to_copy;
+        }
+        // now, mark the input as holding an incomplete buffer
+        input->is_buffered = 0;
+        --inputs->num_buffered;
+        // and mark the output as busy
+        output->is_busy = 1;
+        ++outputs->num_busy;
+        // keep track of the number of exchanges
+        ++num_exchanges;
+    }
+    // TODO any closed but busy output's buffer should be swapped with another
+    // idle output
+    DEBUG("exchanged %d input-output pairs", num_exchanges);
+    return num_exchanges;
 }
 
 int main(int argc, char *argv[]) {
@@ -358,8 +518,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    Inputs inputs;
-    Outputs outputs;
+    Inputs inputs = {0};
+    Outputs outputs = {0};
     if (parse_arguments(argc, argv, &inputs, &outputs)) {
         perror("mkmimo");
         return 1;
@@ -368,23 +528,16 @@ int main(int argc, char *argv[]) {
     DEBUG("num_inputs: %d", inputs.num_inputs);
     DEBUG("num_outputs: %d", outputs.num_outputs);
 
-    while (inputs.num_closed < inputs.num_inputs || outputs.num_busy > 0) {
-        // read some
-        if (inputs.num_closed < inputs.num_inputs) {
-            int num_input_buffers_ready = read_records_from(&inputs);
-            for (int i = 0; i < inputs.num_inputs; ++i) {
-                if (num_input_buffers_ready <= 0) break;
-                Input *input = &inputs.inputs[i];
-                if (input->state != ROUTED &&
-                    input->buffer.end_of_last_record != -1) {
-                    route_records_to_an_output(input, &outputs);
-                    --num_input_buffers_ready;
-                }
-            }
+    // TODO poll inputs/outputs altogether
+    while (records_are_flowing_between(&inputs, &outputs)) {
+        write_to_available(&outputs);
+        if (read_from_available(&inputs) > 0) {
+            while (exchange_buffered_records(&inputs, &outputs) > 0)
+                write_to_available(&outputs);
         }
-        // write some
-        outputs.num_busy = write_pending_records_to(&outputs);
     }
+
+    DEBUG("%s", "all done");
 
     // TODO cleanup: close all outputs and inputs
 

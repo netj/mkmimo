@@ -1,6 +1,11 @@
 # Makefile for mkmimo
 
 CFLAGS += -Wall
+ifdef DEBUG
+    CFLAGS += -g -DDEBUG
+else
+    CFLAGS += -O2
+endif
 
 mkmimo: mkmimo.o
 	$(CC) -o $@ $(LDFLAGS) $^
