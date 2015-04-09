@@ -103,7 +103,8 @@ Buffer *new_buffer() {
     return buf;
 }
 
-int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
+static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
+                                  Outputs *outputs) {
     // first, count number of input/output arguments
     int num_in = 0, num_out = 0;
     int base_idx_out = 1;
@@ -191,18 +192,8 @@ int parse_arguments(int argc, char *argv[], Inputs *inputs, Outputs *outputs) {
     return 0;
 }
 
-int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
-    if (inputs->num_closed == inputs->num_inputs && inputs->num_buffered == 0 &&
-        outputs->num_busy == 0)
-        return 0;
-    // TODO select/poll/epoll/kqueue on them
-    static struct pollfd *fds = NULL;
-    static int num_inputs_outputs = 0;
-    if (fds == NULL) {
-        // allocate poll(2) arguments only once
-        num_inputs_outputs = inputs->num_inputs + outputs->num_outputs;
-        fds = calloc(num_inputs_outputs, sizeof(struct pollfd));
-    }
+static inline void move_closed_inputs_outputs_to_the_end(Inputs *inputs,
+                                                         Outputs *outputs) {
     // move closed inputs/outputs to the end and exclude from polling
     if (inputs->num_inputs - inputs->last_closed < inputs->num_closed)
         for (int i = 0; i < inputs->last_closed; ++i) {
@@ -238,6 +229,22 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
             *output = outputs->outputs[j];
             outputs->outputs[j] = tmp;
         }
+}
+
+static inline int records_are_flowing_between(Inputs *inputs,
+                                              Outputs *outputs) {
+    if (inputs->num_closed == inputs->num_inputs && inputs->num_buffered == 0 &&
+        outputs->num_busy == 0)
+        return 0;
+    // TODO select/poll/epoll/kqueue on them
+    static struct pollfd *fds = NULL;
+    static int num_inputs_outputs = 0;
+    if (fds == NULL) {
+        // allocate poll(2) arguments only once
+        num_inputs_outputs = inputs->num_inputs + outputs->num_outputs;
+        fds = calloc(num_inputs_outputs, sizeof(struct pollfd));
+    }
+    move_closed_inputs_outputs_to_the_end(inputs, outputs);
     // set up arguments for poll(2)
     int num_fds_to_poll =
         num_inputs_outputs - inputs->num_closed - outputs->num_closed;
@@ -249,15 +256,15 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
             Input *input = &inputs->inputs[i];
             p->fd = input->fd;
             p->events = !input->is_buffered ? POLLIN : 0;
-            p->revents = 0;
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            // XXX setting POLLOUT causes busy waiting
-            p->events = 0;  // XXX output->is_busy ? POLLOUT : 0;
+            p->events = 0;
+            // XXX setting POLLOUT causes busy waiting or POLLHUP storm
+            // XXX p->events = output->is_busy ? POLLOUT : 0;
             // DEBUG("%s: poll->events = %d", output->name, p->events);
-            p->revents = 0;
         }
+        p->revents = 0;
     }
     // use poll(2) to wait for any I/O events
     DEBUG("polling %d inputs/outputs", num_fds_to_poll);
@@ -278,7 +285,9 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
                 // XXX is_writable may be useless with poll(2)?
-                if ((output->is_writable = 1)) ++outputs->num_writable;
+                if ((output->is_writable =
+                         1 /* XXX !!(p->revents & (POLLOUT | POLLHUP))*/))
+                    ++outputs->num_writable;
             }
         }
         DEBUG("poll returned, found %d readable inputs, %d writable outputs",
@@ -290,8 +299,7 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
         return 1;
     }
 }
-
-int read_from_available(Inputs *inputs) {
+static inline int read_from_available(Inputs *inputs) {
     if (inputs->num_readable == 0) return 0;
     int num_input_buffers_ready = 0;
     // read from available inputs
@@ -374,8 +382,7 @@ int read_from_available(Inputs *inputs) {
     inputs->num_buffered = num_input_buffers_ready;
     return num_input_buffers_ready;
 }
-
-int write_to_available(Outputs *outputs) {
+static inline int write_to_available(Outputs *outputs) {
     if (outputs->num_writable == 0) return 0;
     int num_outputs_pending = 0;
     // write to each output its buffered records
@@ -432,7 +439,7 @@ int write_to_available(Outputs *outputs) {
     return num_outputs_pending;
 }
 
-int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
+static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     int num_exchanges = 0;
     // every buffered input should swap its buffer with an idle output
     for (int i = 0; i < inputs->num_inputs; ++i) {
