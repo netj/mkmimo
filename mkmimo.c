@@ -23,7 +23,7 @@ typedef struct input_buffer {
     int capacity;
     // the byte range that contains data
     int begin, size;
-    // where a full delimiter is found in the range
+    // where a full record separator is found in the range
     int end_of_last_record;
 } Buffer;
 
@@ -247,12 +247,12 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
         if (i < num_inputs_to_poll) {
             Input *input = &inputs->inputs[i];
             p->fd = input->fd;
-            p->events = POLLIN;
+            p->events = !input->is_buffered ? POLLIN : 0;
             p->revents = 0;
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            p->events = POLLOUT;
+            p->events = output->is_busy ? POLLOUT : 0;
             p->revents = 0;
         }
     }
@@ -298,81 +298,70 @@ int read_from_available(Inputs *inputs) {
         Buffer *buf = input->buffer;
         // skip inputs whose buffer is full
         if (buf->size == buf->capacity) continue;
-        int scan_end_of_record_down_to = buf->begin;
-        // read from input to fill its buffer with at least one record
-        for (;;) {
-            // try to fill the current buffer
-            for (;;) {
-                int num_bytes_readable = buf->capacity - buf->size;
-                if (num_bytes_readable <= 0)
-                    // stop reading when buffer is full
-                    break;
-                DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
-                int num_bytes_read =
-                    read(input->fd, buf->data + buf->begin + buf->size,
-                         num_bytes_readable);
-                DEBUG("%s: %d bytes read", input->name, num_bytes_read);
-                if (num_bytes_read < 0) {
-                    if (errno == EAGAIN)
-                        // stop reading when it's exhausted
-                        break;
-                    else {
-                        // close the input on other errors
-                        perror("read");
-                        DEBUG("%s: input closed due to error", input->name);
-                        close(input->fd);
-                        input->is_closed = 1;
-                        ++inputs->num_closed;
-                        break;
-                    }
-                } else if (num_bytes_read == 0) {
-                    // EOF reached, close the input
-                    DEBUG("%s: input closed", input->name);
-                    close(input->fd);
-                    input->is_closed = 1;
-                    ++inputs->num_closed;
-                    break;
-                } else {
-                    // read normally, reflect size increase
-                    buf->size += num_bytes_read;
-                }
+        int scan_end_of_record_down_to = buf->end_of_last_record + 1;
+        // read from the input to fill its buffer with at least one record
+        int num_bytes_readable = buf->capacity - buf->size;
+        // skip reading if buffer is already full
+        if (num_bytes_readable <= 0) continue;
+        DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
+        int num_bytes_read = read(input->fd, buf->data + buf->begin + buf->size,
+                                  num_bytes_readable);
+        DEBUG("%s: %d bytes read", input->name, num_bytes_read);
+        if (num_bytes_read < 0) {
+            if (errno == EAGAIN)
+                // stop reading when input is exhausted
+                continue;
+            else {
+                // close the input on other errors
+                perror("read");
+                DEBUG("%s: input closed due to error", input->name);
+                close(input->fd);
+                input->is_closed = 1;
+                ++inputs->num_closed;
+                continue;
             }
-            // find the last record's delimiter in the buffer
-            // TODO use strrchr or a faster string matching algorithm
-            int end_of_last_record = -1;
-            for (int j = buf->begin + buf->size - 1;
-                 j >= scan_end_of_record_down_to; --j) {
-                char c = ((char *)buf->data)[j];
-                // TODO support user defined record delimiters
-                if (c == '\n') {
-                    end_of_last_record = j;
-                    break;
-                }
-            }
-            DEBUG("%s: record ends at %d", input->name, end_of_last_record);
-            buf->end_of_last_record = end_of_last_record;
-            if (end_of_last_record > -1) {
-                // stop reading if at least one record exists in the buffer
-                input->is_buffered = 1;
-                ++num_input_buffers_ready;
+        } else if (num_bytes_read == 0) {
+            // EOF reached, close the input
+            DEBUG("%s: input closed", input->name);
+            close(input->fd);
+            input->is_closed = 1;
+            ++inputs->num_closed;
+        } else {
+            // read normally, reflect size increase
+            buf->size += num_bytes_read;
+        }
+        // find the last record separator in the buffer
+        // TODO use strrchr or a faster string matching algorithm
+        int end_of_last_record = -1;
+        for (int j = buf->begin + buf->size - 1;
+             j >= scan_end_of_record_down_to; --j) {
+            char c = ((char *)buf->data)[j];
+            // TODO support user defined record delimiters
+            if (c == '\n') {
+                end_of_last_record = j;
                 break;
-            } else if (!input->is_closed) {
-                // enlarge the buffer and keep reading if a record is larger
-                // than the buffer capacity
-                void *buf_larger = realloc(buf->data, buf->capacity * 2);
-                if (buf_larger != NULL) {
-                    buf->data = buf_larger;
-                    buf->capacity *= 2;
-                    DEBUG("%s: realloc to %d bytes", input->name,
-                          buf->capacity);
-                    // bound the next scan for end-of-record delimiter
-                    scan_end_of_record_down_to = buf->begin + buf->size;
-                } else {
-                    perror("realloc");
-                    // TODO handle out of memory more gracefully?
-                    abort();
-                    break;
-                }
+            }
+        }
+        DEBUG("%s: record ends at %d", input->name, end_of_last_record);
+        buf->end_of_last_record = end_of_last_record;
+        if (end_of_last_record > -1) {
+            // stop reading if at least one record exists in the buffer
+            input->is_buffered = 1;
+            ++num_input_buffers_ready;
+        } else if (!input->is_closed) {
+            // enlarge the buffer so a record that is larger than the current
+            // buffer capacity can be read
+            void *buf_larger = realloc(buf->data, buf->capacity * 2);
+            if (buf_larger != NULL) {
+                buf->data = buf_larger;
+                buf->capacity *= 2;
+                DEBUG("%s: realloc to %d bytes", input->name, buf->capacity);
+                // bound the next scan for end-of-record separator
+                scan_end_of_record_down_to = buf->begin + buf->size;
+            } else {
+                perror("realloc");
+                // TODO handle out of memory more gracefully?
+                abort();
             }
         }
     }
@@ -456,9 +445,9 @@ int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
         // find an output that isn't busy, i.e., whose buffer is free
         Output *output = NULL;
         for (int j = 0; j < outputs->num_outputs; ++j) {
+            Output *o = &outputs->outputs[outputs->next_output];
             ++outputs->next_output;
             outputs->next_output %= outputs->num_outputs;
-            Output *o = &outputs->outputs[outputs->next_output];
             if (o->is_busy) continue;
             output = o;
             break;
@@ -473,8 +462,9 @@ int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
         input->buffer = output->buffer;
         output->buffer = buf;
         // reset input buffer
-        input->buffer->begin = 0;
         input->buffer->size = 0;
+        input->buffer->begin = 0;
+        input->buffer->end_of_last_record = -1;
         // make sure the trailing bytes at the end of input's buffer isn't lost
         int trailing_bytes_begin =
             buf->end_of_last_record + 1 /* length of the record separator */;
@@ -528,13 +518,11 @@ int main(int argc, char *argv[]) {
     DEBUG("num_inputs: %d", inputs.num_inputs);
     DEBUG("num_outputs: %d", outputs.num_outputs);
 
-    // TODO poll inputs/outputs altogether
     while (records_are_flowing_between(&inputs, &outputs)) {
         write_to_available(&outputs);
-        if (read_from_available(&inputs) > 0) {
-            while (exchange_buffered_records(&inputs, &outputs) > 0)
-                write_to_available(&outputs);
-        }
+        if (read_from_available(&inputs) > 0)
+            exchange_buffered_records(&inputs, &outputs);
+        DEBUG("%s", "----------------------------------------");
     }
 
     DEBUG("%s", "all done");
