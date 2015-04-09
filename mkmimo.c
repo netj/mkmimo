@@ -40,6 +40,7 @@ typedef struct input {
     Buffer *buffer;
     // state flags
     int is_closed;
+    int is_near_eof;
     int is_readable;
     int is_buffered;
 } Input;
@@ -141,6 +142,7 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
             .name = NAME_FOR_STDIN,
             .buffer = new_buffer(),
             .is_closed = 0,
+            .is_near_eof = 0,
             .is_readable = 0,
             .is_buffered = 0,
         };
@@ -160,6 +162,7 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                 .name = name,
                 .buffer = new_buffer(),
                 .is_closed = 0,
+                .is_near_eof = 0,
                 .is_readable = 0,
                 .is_buffered = 0,
             };
@@ -309,6 +312,7 @@ static inline int records_are_flowing_between(Inputs *inputs,
                 Input *input = &inputs->inputs[i];
                 if ((input->is_readable = !!(p->revents & (POLLIN | POLLHUP))))
                     ++inputs->num_readable;
+                input->is_near_eof = !!(p->revents & (POLLHUP));
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
                 if ((output->is_writable =
@@ -327,6 +331,7 @@ static inline int records_are_flowing_between(Inputs *inputs,
                 Input *input = &inputs->inputs[i];
                 // XXX is_readable might be useless?
                 if ((input->is_readable = 1)) ++inputs->num_readable;
+                input->is_near_eof = 0;
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
                 // XXX is_writable may be useless with poll(2)?
@@ -349,7 +354,8 @@ static inline int read_from_available(Inputs *inputs) {
         if (buf->size == buf->capacity) continue;
         int scan_end_of_record_down_to = buf->end_of_last_record + 1;
         // XXX reading twice to detect the EOF earlier
-        for (int num_reads = 2; num_reads > 0; --num_reads) {
+        for (int num_reads = input->is_near_eof ? 2 : 1; num_reads > 0;
+             --num_reads) {
             // read from the input to fill its buffer with at least one record
             int num_bytes_readable = buf->capacity - buf->size;
             // skip reading if buffer is already full
@@ -383,19 +389,18 @@ static inline int read_from_available(Inputs *inputs) {
             }
             // find the last record separator in the buffer
             // TODO use strrchr or a faster string matching algorithm
-            int end_of_last_record = -1;
             for (int j = buf->begin + buf->size - 1;
                  j >= scan_end_of_record_down_to; --j) {
                 char c = ((char *)buf->data)[j];
                 // TODO support user defined record delimiters
                 if (c == '\n') {
-                    end_of_last_record = j;
+                    buf->end_of_last_record = j;
                     break;
                 }
             }
-            DEBUG("%s: record ends at %d", input->name, end_of_last_record);
-            buf->end_of_last_record = end_of_last_record;
-            if (end_of_last_record > -1) {
+            DEBUG("%s: record ends at %d", input->name,
+                  buf->end_of_last_record);
+            if (buf->end_of_last_record > -1) {
                 // stop reading if at least one record exists in the buffer
                 SET(input, buffered, 1);
             } else if (!input->is_closed && buf->size == buf->capacity) {
