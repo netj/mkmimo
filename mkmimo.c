@@ -273,11 +273,10 @@ int records_are_flowing_between(Inputs *inputs, Outputs *outputs) {
             struct pollfd *p = &fds[i];
             if (i < num_inputs_to_poll) {
                 Input *input = &inputs->inputs[i];
-                if ((input->is_readable = !!(p->revents & POLLIN)))
+                if ((input->is_readable = !!(p->revents & (POLLIN | POLLHUP))))
                     ++inputs->num_readable;
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                // TODO handle POLLHUP
                 // XXX is_writable may be useless with poll(2)?
                 if ((output->is_writable = 1)) ++outputs->num_writable;
             }
