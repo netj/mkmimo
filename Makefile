@@ -14,7 +14,7 @@ PATH := $(shell pwd):$(PATH)
 export PATH
 
 test: mkmimo
-	cd test && ! type bats >/dev/null || bats *.bats
+	cd test && bats *.bats
 .PHONY: test
 
 clean:
