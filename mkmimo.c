@@ -123,6 +123,33 @@ Buffer *new_buffer() {
     return buf;
 }
 
+/*----------------------------------------------------------------------
+ Portable function to set a socket into nonblocking mode.
+ Calling this on a socket causes all future read() and write() calls on
+ that socket to do only as much as they can immediately, and return
+ without waiting.
+ If no data can be read or written, they return -1 and set errno
+ to EAGAIN (or EWOULDBLOCK).
+ Thanks to Bjorn Reese for this code.
+
+ See: http://www.kegel.com/dkftpbench/nonblocking.html
+----------------------------------------------------------------------*/
+static inline int setNonblocking(int fd)
+{
+    int flags;
+    /* If they have O_NONBLOCK, use the Posix way to do it */
+#if defined(O_NONBLOCK)
+    /* Fixme: O_NONBLOCK is defined but broken on SunOS 4.1.x and AIX 3.2.5. */
+    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
+        flags = 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#else
+    /* Otherwise, use the old way of doing it */
+    flags = 1;
+    return ioctl(fd, FIOBIO, &flags);
+#endif
+}
+
 static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                                   Outputs *outputs) {
     // first, count number of input/output arguments
@@ -152,12 +179,16 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
             .is_buffered = 0,
         };
         inputs->inputs[0] = this;
+        if (setNonblocking(this.fd) < 0) {
+            perrorf("setNonblocking %s", this.name);
+            return 1;
+        }
     } else {
         inputs->num_inputs = num_in;
         inputs->inputs = calloc(num_in, sizeof(Input));
         for (int i = 0; i < num_in; ++i) {
             char *name = argv[1 + i];
-            int fd = open(name, O_RDONLY | O_NONBLOCK);
+            int fd = open(name, O_RDONLY);
             if (fd < 0) {
                 perrorf("open %s", name);
                 return 1;
@@ -172,6 +203,10 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                 .is_buffered = 0,
             };
             inputs->inputs[i] = this;
+            if (setNonblocking(this.fd) < 0) {
+                perrorf("setNonblocking %s", this.name);
+                return 1;
+            }
         }
     }
     inputs->last_closed = inputs->num_inputs;
@@ -188,12 +223,16 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
             .is_busy = 0,
         };
         outputs->outputs[0] = this;
+        if (setNonblocking(this.fd) < 0) {
+            perrorf("setNonblocking %s", this.name);
+            return 2;
+        }
     } else {
         outputs->num_outputs = num_out;
         outputs->outputs = calloc(num_out, sizeof(Output));
         for (int i = 0; i < num_out; ++i) {
             char *name = argv[base_idx_out + i];
-            int fd = open(name, O_WRONLY | O_NONBLOCK | O_CREAT | O_TRUNC,
+            int fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
                           S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd < 0) {
                 perrorf("open %s", name);
@@ -208,6 +247,10 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                 .is_busy = 0,
             };
             outputs->outputs[i] = this;
+            if (setNonblocking(this.fd) < 0) {
+                perrorf("setNonblocking %s", this.name);
+                return 2;
+            }
         }
     }
     outputs->last_closed = outputs->num_outputs;
