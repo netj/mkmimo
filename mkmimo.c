@@ -497,9 +497,9 @@ static inline int write_to_available(Outputs *outputs) {
         }
         int num_bytes_written =
             write(output->fd, buf->data + buf->begin, num_bytes_writable);
+        DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
         if (num_bytes_written >= 0) {
             // normal write
-            DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
             buf->begin += num_bytes_written;
             buf->size -= num_bytes_written;
             if (buf->size == 0) {
