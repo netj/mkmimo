@@ -14,6 +14,7 @@ PATH := $(shell pwd):$(PATH)
 export PATH
 
 include test/bats.mk
+test-build: mkmimo
 
 clean:
 	rm -f mkmimo *.o
