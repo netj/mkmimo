@@ -9,7 +9,7 @@
 #include <poll.h>
 #include <errno.h>
 
-#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)      // 4096 bytes
+#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)     // 4096 bytes
 static int POLL_TIMEOUT_MSEC = -1 /*msec*/;  // -1 /* wait indefinitely */
 
 static char NAME_FOR_STDIN[] = "/dev/stdin";
@@ -133,14 +133,12 @@ Buffer *new_buffer() {
 
  See: http://www.kegel.com/dkftpbench/nonblocking.html
 ----------------------------------------------------------------------*/
-static inline int setNonblocking(int fd)
-{
+static inline int setNonblocking(int fd) {
     int flags;
-    /* If they have O_NONBLOCK, use the Posix way to do it */
+/* If they have O_NONBLOCK, use the Posix way to do it */
 #if defined(O_NONBLOCK)
     /* Fixme: O_NONBLOCK is defined but broken on SunOS 4.1.x and AIX 3.2.5. */
-    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
-        flags = 0;
+    if (-1 == (flags = fcntl(fd, F_GETFL, 0))) flags = 0;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 #else
     /* Otherwise, use the old way of doing it */
@@ -308,11 +306,12 @@ static inline int records_are_flowing_between(Inputs *inputs,
         outputs->num_busy == 0) {
         DEBUG("%s", "no data flow possible, skipping polling");
         return 0;
-    }
-    else
-        DEBUG("%d open inputs, %d buffered inputs, %d open outputs, %d busy outputs",
-              inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
-              outputs->num_outputs - outputs->num_closed, outputs->num_busy);
+    } else
+        DEBUG(
+            "%d open inputs, %d buffered inputs, %d open outputs, %d busy "
+            "outputs",
+            inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
+            outputs->num_outputs - outputs->num_closed, outputs->num_busy);
     // TODO select/poll/epoll/kqueue on them
     static struct pollfd *fds = NULL;
     static int num_inputs_outputs = 0;
@@ -338,19 +337,22 @@ static inline int records_are_flowing_between(Inputs *inputs,
             // polling all inputs to see if they're readable to fill buffers
             p->events = POLLIN;
             // TODO skip polling inputs with full buffers
-            // XXX or should we simply poll only inputs with empty buffers to avoid excessive reads?
+            // XXX or should we simply poll only inputs with empty buffers to
+            // avoid excessive reads?
             // p->events = !input->is_buffered ? POLLIN : 0;
             if (p->events != 0) ++num_inputs_to_actually_poll;
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            // poll only busy outputs, and regard all idle ones as writable (below)
+            // poll only busy outputs, and regard all idle ones as writable
+            // (below)
             p->events = output->is_busy ? POLLOUT : 0;
             if (p->events != 0) ++num_outputs_to_actually_poll;
         }
     }
     // use poll(2) to wait for any I/O events
-    DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll, num_outputs_to_actually_poll);
+    DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll,
+          num_outputs_to_actually_poll);
     inputs->num_readable = outputs->num_writable = 0;
     int num_events = poll(fds, num_fds_to_poll, POLL_TIMEOUT_MSEC);
     if (num_events < 0) {
@@ -367,8 +369,11 @@ static inline int records_are_flowing_between(Inputs *inputs,
                 input->is_near_eof = !!(p->revents & (POLLHUP));
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                // regard idle outputs as writable, and only check whether busy ones become writable
-                if ((output->is_writable = (!output->is_busy || !!(p->revents & (POLLOUT | POLLHUP)))))
+                // regard idle outputs as writable, and only check whether busy
+                // ones become writable
+                if ((output->is_writable =
+                         (!output->is_busy ||
+                          !!(p->revents & (POLLOUT | POLLHUP)))))
                     ++outputs->num_writable;
             }
         }
@@ -394,91 +399,92 @@ static inline int records_are_flowing_between(Inputs *inputs,
 static inline int read_from_available(Inputs *inputs) {
     // read from available inputs
     if (inputs->num_readable > 0)
-    for (int i = 0; i < inputs->num_inputs; ++i) {
-        Input *input = &inputs->inputs[i];
-        // skip inputs that are closed or don't have data ready
-        if (input->is_closed) continue;
-        if (!input->is_readable) continue;
-        Buffer *buf = input->buffer;
-        // skip inputs whose buffer is full
-        if (buf->size == buf->capacity) continue;
-        int scan_end_of_record_down_to = buf->end_of_last_record + 1;
-        // XXX optionally reading twice to detect the EOF earlier
+        for (int i = 0; i < inputs->num_inputs; ++i) {
+            Input *input = &inputs->inputs[i];
+            // skip inputs that are closed or don't have data ready
+            if (input->is_closed) continue;
+            if (!input->is_readable) continue;
+            Buffer *buf = input->buffer;
+            // skip inputs whose buffer is full
+            if (buf->size == buf->capacity) continue;
+            int scan_end_of_record_down_to = buf->end_of_last_record + 1;
+// XXX optionally reading twice to detect the EOF earlier
 #ifdef __APPLE__
-// Darwin / OS X does not reliably give POLLHUP event, so always attempt an extra read
-#define NUM_READS(input)  2
+// Darwin / OS X does not reliably give POLLHUP event, so always attempt an
+// extra read
+#define NUM_READS(input) 2
 #else
 // By default, read twice only when EOF is expected from POLLHUP event
-#define NUM_READS(input)  input->is_near_eof ? 2 : 1
+#define NUM_READS(input) input->is_near_eof ? 2 : 1
 #endif
-        for (int num_reads = NUM_READS(input); num_reads > 0;
-             --num_reads) {
-            // read from the input to fill its buffer with at least one record
-            int num_bytes_readable = buf->capacity - buf->size;
-            // skip reading if buffer is already full
-            if (num_bytes_readable <= 0) continue;
-            DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
-            int num_bytes_read =
-                read(input->fd, buf->data + buf->begin + buf->size,
-                     num_bytes_readable);
-            DEBUG("%s: %d bytes read", input->name, num_bytes_read);
-            if (num_bytes_read < 0) {
-                if (errno == EAGAIN)
-                    // stop reading when input is exhausted
-                    break;
-                else {
-                    // close the input on other errors
-                    perrorf("read %s", input->name);
-                    DEBUG("%s: input closed due to error", input->name);
+            for (int num_reads = NUM_READS(input); num_reads > 0; --num_reads) {
+                // read from the input to fill its buffer with at least one
+                // record
+                int num_bytes_readable = buf->capacity - buf->size;
+                // skip reading if buffer is already full
+                if (num_bytes_readable <= 0) continue;
+                DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
+                int num_bytes_read =
+                    read(input->fd, buf->data + buf->begin + buf->size,
+                         num_bytes_readable);
+                DEBUG("%s: %d bytes read", input->name, num_bytes_read);
+                if (num_bytes_read < 0) {
+                    if (errno == EAGAIN)
+                        // stop reading when input is exhausted
+                        break;
+                    else {
+                        // close the input on other errors
+                        perrorf("read %s", input->name);
+                        DEBUG("%s: input closed due to error", input->name);
+                        close(input->fd);
+                        SET(input, closed, 1);
+                        break;
+                    }
+                } else if (num_bytes_read == 0) {
+                    // EOF reached, close the input
+                    DEBUG("%s: input closed", input->name);
                     close(input->fd);
                     SET(input, closed, 1);
                     break;
-                }
-            } else if (num_bytes_read == 0) {
-                // EOF reached, close the input
-                DEBUG("%s: input closed", input->name);
-                close(input->fd);
-                SET(input, closed, 1);
-                break;
-            } else {
-                // read normally, reflect size increase
-                buf->size += num_bytes_read;
-            }
-            // find the last record separator in the buffer
-            // TODO use strrchr or a faster string matching algorithm
-            for (int j = buf->begin + buf->size - 1;
-                 j >= scan_end_of_record_down_to; --j) {
-                char c = ((char *)buf->data)[j];
-                // TODO support user defined record delimiters
-                if (c == '\n') {
-                    buf->end_of_last_record = j;
-                    break;
-                }
-            }
-            DEBUG("%s: record ends at %d", input->name,
-                  buf->end_of_last_record);
-            if (buf->end_of_last_record > -1) {
-                // stop reading if at least one record exists in the buffer
-                SET(input, buffered, 1);
-            } else if (!input->is_closed && buf->size == buf->capacity) {
-                // enlarge the buffer so a record that is larger than the
-                // current buffer capacity can be read
-                void *buf_larger = realloc(buf->data, buf->capacity * 2);
-                if (buf_larger != NULL) {
-                    buf->data = buf_larger;
-                    buf->capacity *= 2;
-                    DEBUG("%s: realloc to %d bytes", input->name,
-                          buf->capacity);
-                    // bound the next scan for end-of-record separator
-                    scan_end_of_record_down_to = buf->begin + buf->size;
                 } else {
-                    perror("realloc");
-                    // TODO handle out of memory more gracefully?
-                    abort();
+                    // read normally, reflect size increase
+                    buf->size += num_bytes_read;
+                }
+                // find the last record separator in the buffer
+                // TODO use strrchr or a faster string matching algorithm
+                for (int j = buf->begin + buf->size - 1;
+                     j >= scan_end_of_record_down_to; --j) {
+                    char c = ((char *)buf->data)[j];
+                    // TODO support user defined record delimiters
+                    if (c == '\n') {
+                        buf->end_of_last_record = j;
+                        break;
+                    }
+                }
+                DEBUG("%s: record ends at %d", input->name,
+                      buf->end_of_last_record);
+                if (buf->end_of_last_record > -1) {
+                    // stop reading if at least one record exists in the buffer
+                    SET(input, buffered, 1);
+                } else if (!input->is_closed && buf->size == buf->capacity) {
+                    // enlarge the buffer so a record that is larger than the
+                    // current buffer capacity can be read
+                    void *buf_larger = realloc(buf->data, buf->capacity * 2);
+                    if (buf_larger != NULL) {
+                        buf->data = buf_larger;
+                        buf->capacity *= 2;
+                        DEBUG("%s: realloc to %d bytes", input->name,
+                              buf->capacity);
+                        // bound the next scan for end-of-record separator
+                        scan_end_of_record_down_to = buf->begin + buf->size;
+                    } else {
+                        perror("realloc");
+                        // TODO handle out of memory more gracefully?
+                        abort();
+                    }
                 }
             }
         }
-    }
     DEBUG("read from %d readable inputs, %d now buffered", inputs->num_readable,
           inputs->num_buffered);
     return inputs->num_buffered;
@@ -486,49 +492,49 @@ static inline int read_from_available(Inputs *inputs) {
 static inline int write_to_available(Outputs *outputs) {
     // write to each output its buffered records
     if (outputs->num_writable > 0)
-    for (int i = 0; i < outputs->num_outputs; ++i) {
-        Output *output = &outputs->outputs[i];
-        // skip outputs that aren't busy, i.e., have empty buffers
-        if (!output->is_busy) continue;
-        // skip outputs that aren't writable yet
-        if (!output->is_writable) continue;
-        Buffer *buf = output->buffer;
-        // write bufferred data to the output
-        int num_bytes_writable = buf->size;
-        if (num_bytes_writable <= 0) {
-            // stop writing if there's nothing to write
-            SET(output, busy, 0);
-            continue;
-        }
-        int num_bytes_written =
-            write(output->fd, buf->data + buf->begin, num_bytes_writable);
-        DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
-        if (num_bytes_written >= 0) {
-            // normal write
-            buf->begin += num_bytes_written;
-            buf->size -= num_bytes_written;
-            if (buf->size == 0) {
+        for (int i = 0; i < outputs->num_outputs; ++i) {
+            Output *output = &outputs->outputs[i];
+            // skip outputs that aren't busy, i.e., have empty buffers
+            if (!output->is_busy) continue;
+            // skip outputs that aren't writable yet
+            if (!output->is_writable) continue;
+            Buffer *buf = output->buffer;
+            // write bufferred data to the output
+            int num_bytes_writable = buf->size;
+            if (num_bytes_writable <= 0) {
+                // stop writing if there's nothing to write
                 SET(output, busy, 0);
-            } else {
-                SET(output, busy, 1);
-                DEBUG("%s: %d bytes still left", output->name, buf->size);
+                continue;
             }
-        } else {
-            if (errno == EAGAIN) {
-                // output is busy, will try again later
-                DEBUG("%s: output busy", output->name);
-                SET(output, busy, 1);
-                DEBUG("%s: %d bytes still left", output->name, buf->size);
+            int num_bytes_written =
+                write(output->fd, buf->data + buf->begin, num_bytes_writable);
+            DEBUG("%s: wrote %d bytes", output->name, num_bytes_written);
+            if (num_bytes_written >= 0) {
+                // normal write
+                buf->begin += num_bytes_written;
+                buf->size -= num_bytes_written;
+                if (buf->size == 0) {
+                    SET(output, busy, 0);
+                } else {
+                    SET(output, busy, 1);
+                    DEBUG("%s: %d bytes still left", output->name, buf->size);
+                }
             } else {
-                // something went wrong
-                perrorf("write %s", output->name);
-                DEBUG("%s: output closed due to error", output->name);
-                close(output->fd);
-                SET(output, closed, 1);
-                // XXX the buffer should be routed to another output
+                if (errno == EAGAIN) {
+                    // output is busy, will try again later
+                    DEBUG("%s: output busy", output->name);
+                    SET(output, busy, 1);
+                    DEBUG("%s: %d bytes still left", output->name, buf->size);
+                } else {
+                    // something went wrong
+                    perrorf("write %s", output->name);
+                    DEBUG("%s: output closed due to error", output->name);
+                    close(output->fd);
+                    SET(output, closed, 1);
+                    // XXX the buffer should be routed to another output
+                }
             }
         }
-    }
     DEBUG("wrote to %d writable outputs, %d still busy", outputs->num_writable,
           outputs->num_busy);
     return outputs->num_busy;
@@ -616,7 +622,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    DEBUG("opening inputs and outputs from %d arguments", argc-1);
+    DEBUG("opening inputs and outputs from %d arguments", argc - 1);
     Inputs inputs = {0};
     Outputs outputs = {0};
     if (parse_arguments(argc, argv, &inputs, &outputs)) {
