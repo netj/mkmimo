@@ -9,10 +9,14 @@
 #include <poll.h>
 #include <errno.h>
 
+#ifdef __APPLE__
+#define POLLHUP_SUPPORT_UNRELIABLE
+#endif
+
 #define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)  // 4096 bytes
 static int POLL_TIMEOUT_MSEC =
-#ifdef __APPLE__
-    // OS X's POLLHUP is not reliable, so use a timeout to detect input EOFs
+#ifdef POLLHUP_SUPPORT_UNRELIABLE
+    // when POLLHUP support unreliable, use a timeout to detect input EOFs
     1000 /*msec*/
 #else
     -1 /* wait indefinitely */
@@ -415,16 +419,9 @@ static inline int read_from_available(Inputs *inputs) {
             // skip inputs whose buffer is full
             if (buf->size == buf->capacity) continue;
             int scan_end_of_record_down_to = buf->end_of_last_record + 1;
-// XXX optionally reading twice to detect the EOF earlier
-#ifdef __APPLE__
-// Darwin / OS X does not reliably give POLLHUP event, so always attempt an
-// extra read
-#define NUM_READS(input) 2
-#else
-// By default, read twice only when EOF is expected from POLLHUP event
-#define NUM_READS(input) input->is_near_eof ? 2 : 1
-#endif
-            for (int num_reads = NUM_READS(input); num_reads > 0; --num_reads) {
+            // XXX optionally reading twice to detect the EOF earlier
+            for (int num_reads = input->is_near_eof ? 2 : 1; num_reads > 0;
+                 --num_reads) {
                 // read from the input to fill its buffer with at least one
                 // record
                 int num_bytes_readable = buf->capacity - buf->size;
