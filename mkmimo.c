@@ -17,10 +17,12 @@ static char NAME_FOR_STDOUT[] = "-";
 
 #ifdef DEBUG
 #undef DEBUG
-#define DEBUG(fmt, args...) fprintf(stderr, fmt "\n", args);
+#define DEBUG(fmt, args...) fprintf(stderr, fmt "\n", args)
 #else
 #define DEBUG(fmt, args...)
 #endif  // DEBUG
+
+#define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
 
 struct input;
 typedef struct input_buffer {
@@ -157,7 +159,7 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
             char *name = argv[1 + i];
             int fd = open(name, O_RDONLY | O_NONBLOCK);
             if (fd < 0) {
-                perror("open");
+                perrorf("open %s", name);
                 return 1;
             }
             Input this = {
@@ -194,7 +196,7 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
             int fd = open(name, O_WRONLY | O_NONBLOCK | O_CREAT | O_TRUNC,
                           S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             if (fd < 0) {
-                perror("open");
+                perrorf("open %s", name);
                 return 2;
             }
             Output this = {
@@ -261,8 +263,10 @@ static inline int records_are_flowing_between(Inputs *inputs,
         // buffers
         inputs->num_buffered == 0 &&
         // 3. no data is pending in output buffers, i.e., all outputs are idle
-        outputs->num_busy == 0)
+        outputs->num_busy == 0) {
+        DEBUG("%s", "no data flow possible, skipping polling");
         return 0;
+    }
     else
         DEBUG("%d open inputs, %d buffered inputs, %d busy outputs",
               inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
@@ -374,7 +378,7 @@ static inline int read_from_available(Inputs *inputs) {
                     break;
                 else {
                     // close the input on other errors
-                    perror("read");
+                    perrorf("read %s", input->name);
                     DEBUG("%s: input closed due to error", input->name);
                     close(input->fd);
                     SET(input, closed, 1);
@@ -469,7 +473,7 @@ static inline int write_to_available(Outputs *outputs) {
                 DEBUG("%s: %d bytes still left", output->name, buf->size);
             } else {
                 // something went wrong
-                perror("write");
+                perrorf("write %s", output->name);
                 DEBUG("%s: output closed due to error", output->name);
                 close(output->fd);
                 SET(output, closed, 1);
@@ -559,6 +563,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    DEBUG("opening inputs and outputs from %d arguments", argc-1);
     Inputs inputs = {0};
     Outputs outputs = {0};
     if (parse_arguments(argc, argv, &inputs, &outputs)) {
