@@ -9,8 +9,15 @@
 #include <poll.h>
 #include <errno.h>
 
-#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)     // 4096 bytes
-static int POLL_TIMEOUT_MSEC = -1 /*msec*/;  // -1 /* wait indefinitely */
+#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)  // 4096 bytes
+static int POLL_TIMEOUT_MSEC =
+#ifdef __APPLE__
+    // OS X's POLLHUP is not reliable, so use a timeout to detect input EOFs
+    1000 /*msec*/
+#else
+    -1 /* wait indefinitely */
+#endif
+    ;
 
 static char NAME_FOR_STDIN[] = "/dev/stdin";
 static char NAME_FOR_STDOUT[] = "/dev/stdout";
