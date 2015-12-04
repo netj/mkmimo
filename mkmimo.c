@@ -12,8 +12,8 @@
 #define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)      // 4096 bytes
 static int POLL_TIMEOUT_MSEC = -1 /*msec*/;  // -1 /* wait indefinitely */
 
-static char NAME_FOR_STDIN[] = "-";
-static char NAME_FOR_STDOUT[] = "-";
+static char NAME_FOR_STDIN[] = "/dev/stdin";
+static char NAME_FOR_STDOUT[] = "/dev/stdout";
 
 #ifdef DEBUG
 #undef DEBUG
@@ -42,7 +42,6 @@ typedef struct input {
     // name of the file
     char *name;
     // the buffer for reading
-    // TODO change this to pointer so buffer can be swapped btwn outputs
     Buffer *buffer;
     // state flags
     int is_closed;
