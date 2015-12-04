@@ -336,15 +336,17 @@ static inline int records_are_flowing_between(Inputs *inputs,
         if (i < num_inputs_to_poll) {
             Input *input = &inputs->inputs[i];
             p->fd = input->fd;
-            p->events = POLLIN; // polling all inputs to see if they're readable to fill buffers
-            // p->events = !input->is_buffered ? POLLIN : 0; // XXX or should we poll only those with empty buffers?
+            // polling all inputs to see if they're readable to fill buffers
+            p->events = POLLIN;
             // TODO skip polling inputs with full buffers
+            // XXX or should we simply poll only inputs with empty buffers to avoid excessive reads?
+            // p->events = !input->is_buffered ? POLLIN : 0;
             if (p->events != 0) ++num_inputs_to_actually_poll;
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            p->events = POLLOUT; // polling all outputs to see if they're writable
-            // p->events = output->is_busy ? POLLOUT : 0; // XXX or should we poll only busy outputs?
+            // poll only busy outputs, and regard all idle ones as writable (below)
+            p->events = output->is_busy ? POLLOUT : 0;
             if (p->events != 0) ++num_outputs_to_actually_poll;
         }
     }
@@ -366,7 +368,8 @@ static inline int records_are_flowing_between(Inputs *inputs,
                 input->is_near_eof = !!(p->revents & (POLLHUP));
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                if ((output->is_writable = !!(p->revents & (POLLOUT | POLLHUP))))
+                // regard idle outputs as writable, and only check whether busy ones become writable
+                if ((output->is_writable = (!output->is_busy || !!(p->revents & (POLLOUT | POLLHUP)))))
                     ++outputs->num_writable;
             }
         }
@@ -401,8 +404,15 @@ static inline int read_from_available(Inputs *inputs) {
         // skip inputs whose buffer is full
         if (buf->size == buf->capacity) continue;
         int scan_end_of_record_down_to = buf->end_of_last_record + 1;
-        // XXX reading twice to detect the EOF earlier
-        for (int num_reads = input->is_near_eof ? 2 : 1; num_reads > 0;
+        // XXX optionally reading twice to detect the EOF earlier
+#ifdef __APPLE__
+// Darwin / OS X does not reliably give POLLHUP event, so always attempt an extra read
+#define NUM_READS(input)  2
+#else
+// By default, read twice only when EOF is expected from POLLHUP event
+#define NUM_READS(input)  input->is_near_eof ? 2 : 1
+#endif
+        for (int num_reads = NUM_READS(input); num_reads > 0;
              --num_reads) {
             // read from the input to fill its buffer with at least one record
             int num_bytes_readable = buf->capacity - buf->size;
