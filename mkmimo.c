@@ -10,14 +10,14 @@
 #include <errno.h>
 
 #define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)      // 4096 bytes
-static int POLL_TIMEOUT_MSEC = 100 /*msec*/;  // -1 /* wait indefinitely */
+static int POLL_TIMEOUT_MSEC = -1 /*msec*/;  // -1 /* wait indefinitely */
 
 static char NAME_FOR_STDIN[] = "-";
 static char NAME_FOR_STDOUT[] = "-";
 
 #ifdef DEBUG
 #undef DEBUG
-#define DEBUG(fmt, args...) fprintf(stderr, fmt "\n", args)
+#define DEBUG(fmt, args...) fprintf(stderr, "[%d] " fmt "\n", getpid(), args)
 #else
 #define DEBUG(fmt, args...)
 #endif  // DEBUG
@@ -311,9 +311,9 @@ static inline int records_are_flowing_between(Inputs *inputs,
         return 0;
     }
     else
-        DEBUG("%d open inputs, %d buffered inputs, %d busy outputs",
+        DEBUG("%d open inputs, %d buffered inputs, %d open outputs, %d busy outputs",
               inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
-              outputs->num_busy);
+              outputs->num_outputs - outputs->num_closed, outputs->num_busy);
     // TODO select/poll/epoll/kqueue on them
     static struct pollfd *fds = NULL;
     static int num_inputs_outputs = 0;
@@ -328,28 +328,29 @@ static inline int records_are_flowing_between(Inputs *inputs,
         num_inputs_outputs - inputs->num_closed - outputs->num_closed;
     int num_inputs_to_poll = inputs->num_inputs - inputs->num_closed;
     if (num_fds_to_poll == 0) return 0;
+    int num_inputs_to_actually_poll = 0;
+    int num_outputs_to_actually_poll = 0;
     for (int i = 0; i < num_fds_to_poll; ++i) {
         struct pollfd *p = &fds[i];
         p->revents = 0;
         if (i < num_inputs_to_poll) {
             Input *input = &inputs->inputs[i];
             p->fd = input->fd;
-            p->events = POLLIN;  //!input->is_buffered ? POLLIN : 0;
+            p->events = POLLIN; // polling all inputs to see if they're readable to fill buffers
+            // p->events = !input->is_buffered ? POLLIN : 0; // XXX or should we poll only those with empty buffers?
+            // TODO skip polling inputs with full buffers
+            if (p->events != 0) ++num_inputs_to_actually_poll;
         } else {
             Output *output = &outputs->outputs[i - num_inputs_to_poll];
             p->fd = output->fd;
-            p->events =
-                // XXX setting POLLOUT causes busy waiting or POLLHUP storm
-                0;
-            // output->is_busy ? POLLOUT : 0;
-            // POLLOUT;
-            // DEBUG("%s: poll->events = %d", output->name, p->events);
+            p->events = POLLOUT; // polling all outputs to see if they're writable
+            // p->events = output->is_busy ? POLLOUT : 0; // XXX or should we poll only busy outputs?
+            if (p->events != 0) ++num_outputs_to_actually_poll;
         }
     }
     // use poll(2) to wait for any I/O events
+    DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll, num_outputs_to_actually_poll);
     inputs->num_readable = outputs->num_writable = 0;
-    DEBUG("polling %d inputs and %d outputs", num_inputs_to_poll,
-          outputs->num_busy);
     int num_events = poll(fds, num_fds_to_poll, POLL_TIMEOUT_MSEC);
     if (num_events < 0) {
         perror("poll");
@@ -365,8 +366,7 @@ static inline int records_are_flowing_between(Inputs *inputs,
                 input->is_near_eof = !!(p->revents & (POLLHUP));
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                if ((output->is_writable =
-                         1 /* XXX || !!(p->revents & (POLLOUT | POLLHUP))*/))
+                if ((output->is_writable = !!(p->revents & (POLLOUT | POLLHUP))))
                     ++outputs->num_writable;
             }
         }
@@ -379,12 +379,10 @@ static inline int records_are_flowing_between(Inputs *inputs,
         for (int i = 0; i < num_fds_to_poll; ++i) {
             if (i < num_inputs_to_poll) {
                 Input *input = &inputs->inputs[i];
-                // XXX is_readable might be useless?
                 if ((input->is_readable = 1)) ++inputs->num_readable;
                 input->is_near_eof = 0;
             } else {
                 Output *output = &outputs->outputs[i - num_inputs_to_poll];
-                // XXX is_writable may be useless with poll(2)?
                 if ((output->is_writable = 1)) ++outputs->num_writable;
             }
         }
@@ -392,8 +390,8 @@ static inline int records_are_flowing_between(Inputs *inputs,
     }
 }
 static inline int read_from_available(Inputs *inputs) {
-    if (inputs->num_readable == 0) return 0;
     // read from available inputs
+    if (inputs->num_readable > 0)
     for (int i = 0; i < inputs->num_inputs; ++i) {
         Input *input = &inputs->inputs[i];
         // skip inputs that are closed or don't have data ready
@@ -472,21 +470,19 @@ static inline int read_from_available(Inputs *inputs) {
             }
         }
     }
-    DEBUG("read from inputs %d readable, %d now buffered", inputs->num_readable,
+    DEBUG("read from %d readable inputs, %d now buffered", inputs->num_readable,
           inputs->num_buffered);
     return inputs->num_buffered;
 }
 static inline int write_to_available(Outputs *outputs) {
-    if (outputs->num_writable == 0) return 0;
     // write to each output its buffered records
+    if (outputs->num_writable > 0)
     for (int i = 0; i < outputs->num_outputs; ++i) {
         Output *output = &outputs->outputs[i];
         // skip outputs that aren't busy, i.e., have empty buffers
         if (!output->is_busy) continue;
         // skip outputs that aren't writable yet
-        if (!output->is_writable) {
-            continue;
-        }
+        if (!output->is_writable) continue;
         Buffer *buf = output->buffer;
         // write bufferred data to the output
         int num_bytes_writable = buf->size;
@@ -524,7 +520,7 @@ static inline int write_to_available(Outputs *outputs) {
             }
         }
     }
-    DEBUG("wrote to outputs %d writable, %d still busy", outputs->num_writable,
+    DEBUG("wrote to %d writable outputs, %d still busy", outputs->num_writable,
           outputs->num_busy);
     return outputs->num_busy;
 }
@@ -534,9 +530,14 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     // every buffered input should swap its buffer with an idle output
     for (int i = 0; i < inputs->num_inputs; ++i) {
         // stop early if it's apparent that no further pairs can be found
-        if (inputs->num_buffered <= 0) break;
-        if (outputs->num_busy == outputs->num_outputs - outputs->num_closed)
+        if (inputs->num_buffered <= 0) {
+            DEBUG("%s", "exchanging stops as no more inputs are buffered");
             break;
+        }
+        if (outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
+            DEBUG("%s", "exchanging stops as all outputs are busy");
+            break;
+        }
         // find an input whose buffer contains records
         Input *input = &inputs->inputs[i];
         if (!input->is_buffered) continue;
@@ -551,7 +552,7 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
             break;
         }
         // stop if no idle output can be found
-        if (output == NULL) break;
+        if (output == NULL) continue;
         DEBUG("routing %d bytes: %s > %s",
               input->buffer->end_of_last_record + 1 - input->buffer->begin,
               input->name, output->name);

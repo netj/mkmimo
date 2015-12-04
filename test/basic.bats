@@ -43,12 +43,12 @@ teardown() {
         seq $numin >i &
         # consume lines
         (
-            # take first 100 lines
-            for i in $(seq 100); do read; echo $REPLY; done
+            # take first few lines
+            for i in $(seq ${RANDOM:0:3}); do read; echo $REPLY; done
             # put a slight pause
             sleep 1
             # then consume the rest
-            while read; do echo $REPLY; done
+            cat
         ) <o >ls &
         # use mkmimo to form the data flow
         mkmimo <i | mkmimo \> o &
