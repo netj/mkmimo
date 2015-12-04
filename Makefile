@@ -13,9 +13,7 @@ mkmimo: mkmimo.o
 PATH := $(shell pwd):$(PATH)
 export PATH
 
-test: mkmimo
-	cd test && bats *.bats
-.PHONY: test
+include test/bats.mk
 
 clean:
 	rm -f mkmimo *.o
