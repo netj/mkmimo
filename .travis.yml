@@ -4,8 +4,13 @@ compiler:
   - clang
   - gcc
 
+addons:
+  apt:
+    packages:
+    - bc
+
 install:
-  - make
+- make
 
 script:
-  - make test
+- make test
