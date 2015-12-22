@@ -21,8 +21,11 @@ teardown() {
 
     # run cat
     numlines_by_cat=$(generate_input | cat | wc -l)
-    # run mkmimo
-    numlines_by_mkmimo=$(generate_input | mkmimo | wc -l)
+    # run mkmimo (without any throttling down)
+    numlines_by_mkmimo=$(generate_input | THROTTLE_SLEEP_MSEC=0 mkmimo | wc -l)
+
+    echo "numlines_by_cat    = $numlines_by_cat"
+    echo "numlines_by_mkmimo = $numlines_by_mkmimo"
 
     # mkmimo should be faster
     [ $numlines_by_mkmimo -gt $numlines_by_cat ] ||

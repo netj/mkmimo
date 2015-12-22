@@ -14,14 +14,19 @@
 #endif
 
 #define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)  // 4096 bytes
-static int POLL_TIMEOUT_MSEC =
+static int BUFFER_SIZE = DEFAULT_BUFFER_SIZE;
+
+// when POLLHUP support is unreliable, use a timeout to detect input EOFs
 #ifdef POLLHUP_SUPPORT_UNRELIABLE
-    // when POLLHUP support unreliable, use a timeout to detect input EOFs
-    1000 /*msec*/
+#define DEFAULT_POLL_TIMEOUT_MSEC 1000 /*msec*/
 #else
-    -1 /* wait indefinitely */
+#define DEFAULT_POLL_TIMEOUT_MSEC -1 /* wait indefinitely */
 #endif
-    ;
+static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
+
+// when all output is busy, throttle down by sleeping this much interval
+#define DEFAULT_THROTTLE_SLEEP_MSEC 100
+static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 
 static char NAME_FOR_STDIN[] = "/dev/stdin";
 static char NAME_FOR_STDOUT[] = "/dev/stdout";
@@ -114,19 +119,18 @@ typedef struct {
     } while (0)
 #define SET(item, flag, flag_val) SET_FLAG(item##s, item, flag, flag_val)
 
-static int buffer_size = DEFAULT_BUFFER_SIZE;
 Buffer *new_buffer() {
     Buffer *buf = malloc(sizeof(Buffer));
     if (buf == NULL) {
         perror("malloc");
         return NULL;
     }
-    buf->data = malloc(buffer_size);
+    buf->data = malloc(BUFFER_SIZE);
     if (buf->data == NULL) {
         perror("malloc");
         return NULL;
     }
-    buf->capacity = buffer_size;
+    buf->capacity = BUFFER_SIZE;
     buf->begin = 0;
     buf->size = 0;
     buf->end_of_last_record = -1;
@@ -360,6 +364,11 @@ static inline int records_are_flowing_between(Inputs *inputs,
             p->events = output->is_busy ? POLLOUT : 0;
             if (p->events != 0) ++num_outputs_to_actually_poll;
         }
+    }
+    // throttle down if all outputs are busy
+    if (outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
+        DEBUG("throttling down poll %d msec as all outputs are busy", THROTTLE_SLEEP_MSEC);
+        usleep(THROTTLE_SLEEP_MSEC * 1000);
     }
     // use poll(2) to wait for any I/O events
     DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll,
@@ -614,17 +623,31 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     return num_exchanges;
 }
 
+static inline void parse_environ(void) {
+#define readIntFromEnv(envName, ConfigVar, condition, defaultValue) \
+    do { \
+        char *envValue = getenv(#envName); \
+        if (envValue != NULL) { \
+            ConfigVar = atoi(envValue); \
+            if (!(condition)) { \
+                fprintf(stderr, "%d: Invalid " #envName ", using default %d\n", \
+                        ConfigVar, defaultValue); \
+                ConfigVar = defaultValue; \
+            } else { \
+                DEBUG(#envName "=%d", ConfigVar); \
+            } \
+        } \
+    } while (0)
+    readIntFromEnv(BLOCKSIZE, BUFFER_SIZE, BUFFER_SIZE <= 0,
+                   DEFAULT_BUFFER_SIZE);
+    readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC,
+                   POLL_TIMEOUT_MSEC >= -1, DEFAULT_POLL_TIMEOUT_MSEC);
+    readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
+                   THROTTLE_SLEEP_MSEC >= 0, DEFAULT_THROTTLE_SLEEP_MSEC);
+}
+
 int main(int argc, char *argv[]) {
-    // read BLOCKSIZE environment variable
-    char *blocksize = getenv("BLOCKSIZE");
-    if (blocksize != NULL) {
-        buffer_size = atoi(blocksize);
-        if (buffer_size <= 0) {
-            fprintf(stderr, "%d: Invalid BLOCKSIZE, using default %d\n",
-                    buffer_size, DEFAULT_BUFFER_SIZE);
-            buffer_size = DEFAULT_BUFFER_SIZE;
-        }
-    }
+    parse_environ();
 
     DEBUG("opening inputs and outputs from %d arguments", argc - 1);
     Inputs inputs = {0};
