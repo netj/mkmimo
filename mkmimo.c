@@ -137,7 +137,7 @@ Buffer *new_buffer() {
     return buf;
 }
 
-void enlarge_buffer(Buffer *buf, size_t new_capacity) {
+static inline void enlarge_buffer(Buffer *buf, size_t new_capacity) {
     void *buf_larger = realloc(buf->data, new_capacity);
     if (buf_larger != NULL) {
         buf->data = buf_larger;
