@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +9,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <poll.h>
+#include <time.h>
 #include <errno.h>
 
 #ifdef __APPLE__
@@ -27,6 +30,8 @@ static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 // when all output is busy, throttle down by sleeping this much interval
 #define DEFAULT_THROTTLE_SLEEP_MSEC 100
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
+
+static struct timespec THROTTLE_TIMESPEC;
 
 static char NAME_FOR_STDIN[] = "/dev/stdin";
 static char NAME_FOR_STDOUT[] = "/dev/stdout";
@@ -379,8 +384,8 @@ static inline int records_are_flowing_between(Inputs *inputs,
     }
     // throttle down if all outputs are busy
     if (outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
-        DEBUG("throttling down poll %d msec as all outputs are busy", THROTTLE_SLEEP_MSEC);
-        usleep(THROTTLE_SLEEP_MSEC * 1000);
+        DEBUG("throttling down poll %d ms as all outputs are busy", THROTTLE_SLEEP_MSEC);
+        nanosleep(&THROTTLE_TIMESPEC, NULL);
     }
     // use poll(2) to wait for any I/O events
     DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll,
@@ -656,6 +661,9 @@ static inline void parse_environ(void) {
                    POLL_TIMEOUT_MSEC >= -1, DEFAULT_POLL_TIMEOUT_MSEC);
     readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
                    THROTTLE_SLEEP_MSEC >= 0, DEFAULT_THROTTLE_SLEEP_MSEC);
+    // prepare nanosleep's timespec for throttling
+    THROTTLE_TIMESPEC.tv_sec = THROTTLE_SLEEP_MSEC / 1000;
+    THROTTLE_TIMESPEC.tv_nsec = (THROTTLE_SLEEP_MSEC % 1000) * 1000000;
 }
 
 int main(int argc, char *argv[]) {
