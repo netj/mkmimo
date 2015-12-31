@@ -30,7 +30,6 @@ static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 // when all output is busy, throttle down by sleeping this much interval
 #define DEFAULT_THROTTLE_SLEEP_MSEC 100
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
-
 static struct timespec THROTTLE_TIMESPEC;
 
 static char NAME_FOR_STDIN[] = "/dev/stdin";
@@ -384,7 +383,8 @@ static inline int records_are_flowing_between(Inputs *inputs,
     }
     // throttle down if all outputs are busy
     if (outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
-        DEBUG("throttling down poll %d ms as all outputs are busy", THROTTLE_SLEEP_MSEC);
+        DEBUG("throttling down poll %d ms as all outputs are busy",
+              THROTTLE_SLEEP_MSEC);
         nanosleep(&THROTTLE_TIMESPEC, NULL);
     }
     // use poll(2) to wait for any I/O events
@@ -453,7 +453,8 @@ static inline int read_from_available(Inputs *inputs) {
                 int num_bytes_readable = buf->capacity - buf->size;
                 // skip reading if buffer is already full
                 if (num_bytes_readable <= 0) {
-                    DEBUG("%s: buffer is full: %ld used out of %ld", input->name, buf->size, buf->capacity);
+                    DEBUG("%s: buffer is full: %d used out of %d", input->name,
+                          buf->size, buf->capacity);
                     continue;
                 }
                 DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
@@ -614,7 +615,8 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
                   trailing_bytes_begin, num_trailing_bytes_to_copy);
             if (input->buffer->capacity < buf->capacity) {
                 DEBUG("enlarging buffer size of %p to %d bytes from %d bytes",
-                      input->buffer->data, input->buffer->capacity, buf->capacity);
+                      input->buffer->data, input->buffer->capacity,
+                      buf->capacity);
                 enlarge_buffer(input->buffer, buf->capacity);
             }
             DEBUG("copying to %p from %p", input->buffer->data, buf->data);
@@ -641,19 +643,20 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
 }
 
 static inline void parse_environ(void) {
-#define readIntFromEnv(envName, ConfigVar, condition, defaultValue) \
-    do { \
-        char *envValue = getenv(#envName); \
-        if (envValue != NULL) { \
-            ConfigVar = atoi(envValue); \
-            if (!(condition)) { \
-                fprintf(stderr, "%d: Invalid " #envName ", using default %d\n", \
-                        ConfigVar, defaultValue); \
-                ConfigVar = defaultValue; \
-            } else { \
-                DEBUG(#envName "=%d", ConfigVar); \
-            } \
-        } \
+#define readIntFromEnv(envName, ConfigVar, condition, defaultValue)     \
+    do {                                                                \
+        char *envValue = getenv(#envName);                              \
+        if (envValue != NULL) {                                         \
+            ConfigVar = atoi(envValue);                                 \
+            if (!(condition)) {                                         \
+                fprintf(stderr,                                         \
+                        "%d: Invalid " #envName ", using default %d\n", \
+                        ConfigVar, defaultValue);                       \
+                ConfigVar = defaultValue;                               \
+            } else {                                                    \
+                DEBUG(#envName "=%d", ConfigVar);                       \
+            }                                                           \
+        }                                                               \
     } while (0)
     readIntFromEnv(BLOCKSIZE, BUFFER_SIZE, BUFFER_SIZE <= 0,
                    DEFAULT_BUFFER_SIZE);
