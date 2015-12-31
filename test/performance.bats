@@ -1,16 +1,5 @@
 #!/usr/bin/env bats
-
-setup() {
-    # create a temporary directory for tests
-    MKMIMO_TMPDIR=$(mktemp -d "$BATS_TMPDIR"/mkmimo-tests.XXXXXX)
-    pushd "$MKMIMO_TMPDIR" >/dev/null
-}
-
-teardown() {
-    popd >/dev/null
-    # clean up the temporary directory for tests
-    rm -rf "$MKMIMO_TMPDIR"
-}
+load test_helpers
 
 @test "speed comparable to cat (takes 10s)" {
     numlines=100000000000000000 # a ridiculuously large number
@@ -22,7 +11,7 @@ teardown() {
     # run cat
     numlines_by_cat=$(generate_input | cat | wc -l)
     # run mkmimo (without any throttling down)
-    numlines_by_mkmimo=$(generate_input | THROTTLE_SLEEP_MSEC=0 mkmimo | wc -l)
+    numlines_by_mkmimo=$(generate_input | THROTTLE_SLEEP_MSEC=0 mkmimo 2>/dev/null | wc -l)
 
     echo "numlines_by_cat    = $numlines_by_cat"
     echo "numlines_by_mkmimo = $numlines_by_mkmimo"
