@@ -137,6 +137,18 @@ Buffer *new_buffer() {
     return buf;
 }
 
+void enlarge_buffer(Buffer *buf, size_t new_capacity) {
+    void *buf_larger = realloc(buf->data, new_capacity);
+    if (buf_larger != NULL) {
+        buf->data = buf_larger;
+        buf->capacity = new_capacity;
+    } else {
+        perror("realloc");
+        // TODO handle out of memory more gracefully?
+        abort();
+    }
+}
+
 /*----------------------------------------------------------------------
  Portable function to set a socket into nonblocking mode.
  Calling this on a socket causes all future read() and write() calls on
@@ -435,7 +447,10 @@ static inline int read_from_available(Inputs *inputs) {
                 // record
                 int num_bytes_readable = buf->capacity - buf->size;
                 // skip reading if buffer is already full
-                if (num_bytes_readable <= 0) continue;
+                if (num_bytes_readable <= 0) {
+                    DEBUG("%s: buffer is full: %ld used out of %ld", input->name, buf->size, buf->capacity);
+                    continue;
+                }
                 DEBUG("%s: can read %d bytes", input->name, num_bytes_readable);
                 int num_bytes_read =
                     read(input->fd, buf->data + buf->begin + buf->size,
@@ -482,19 +497,11 @@ static inline int read_from_available(Inputs *inputs) {
                 } else if (!input->is_closed && buf->size == buf->capacity) {
                     // enlarge the buffer so a record that is larger than the
                     // current buffer capacity can be read
-                    void *buf_larger = realloc(buf->data, buf->capacity * 2);
-                    if (buf_larger != NULL) {
-                        buf->data = buf_larger;
-                        buf->capacity *= 2;
-                        DEBUG("%s: realloc to %d bytes", input->name,
-                              buf->capacity);
-                        // bound the next scan for end-of-record separator
-                        scan_end_of_record_down_to = buf->begin + buf->size;
-                    } else {
-                        perror("realloc");
-                        // TODO handle out of memory more gracefully?
-                        abort();
-                    }
+                    DEBUG("%s: doubling buffer size to %d bytes", input->name,
+                          buf->capacity * 2);
+                    enlarge_buffer(buf, buf->capacity * 2);
+                    // bound the next scan for end-of-record separator
+                    scan_end_of_record_down_to = buf->begin + buf->size;
                 }
             }
         }
@@ -600,6 +607,11 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
         if (num_trailing_bytes_to_copy > 0) {
             DEBUG("trailing_bytes_begin=%d, num_trailing_bytes_to_copy=%d",
                   trailing_bytes_begin, num_trailing_bytes_to_copy);
+            if (input->buffer->capacity < buf->capacity) {
+                DEBUG("enlarging buffer size of %p to %d bytes from %d bytes",
+                      input->buffer->data, input->buffer->capacity, buf->capacity);
+                enlarge_buffer(input->buffer, buf->capacity);
+            }
             DEBUG("copying to %p from %p", input->buffer->data, buf->data);
             memcpy(input->buffer->data + input->buffer->begin,
                    buf->data + trailing_bytes_begin,
