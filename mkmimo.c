@@ -16,8 +16,8 @@
 #define POLLHUP_SUPPORT_UNRELIABLE
 #endif
 
-#define DEFAULT_BUFFER_SIZE (4 * BUFSIZ)  // 4096 bytes
-static int BUFFER_SIZE = DEFAULT_BUFFER_SIZE;
+#define DEFAULT_BLOCKSIZE (4 * BUFSIZ)  // 4096 bytes
+static int BLOCKSIZE = DEFAULT_BLOCKSIZE;
 
 // when POLLHUP support is unreliable, use a timeout to detect input EOFs
 #ifdef POLLHUP_SUPPORT_UNRELIABLE
@@ -129,12 +129,12 @@ Buffer *new_buffer() {
         perror("malloc");
         return NULL;
     }
-    buf->data = malloc(BUFFER_SIZE);
+    buf->data = malloc(BLOCKSIZE);
     if (buf->data == NULL) {
         perror("malloc");
         return NULL;
     }
-    buf->capacity = BUFFER_SIZE;
+    buf->capacity = BLOCKSIZE;
     buf->begin = 0;
     buf->size = 0;
     buf->end_of_last_record = -1;
@@ -658,8 +658,8 @@ static inline void parse_environ(void) {
             }                                                           \
         }                                                               \
     } while (0)
-    readIntFromEnv(BLOCKSIZE, BUFFER_SIZE, BUFFER_SIZE <= 0,
-                   DEFAULT_BUFFER_SIZE);
+    readIntFromEnv(BLOCKSIZE, BLOCKSIZE, BLOCKSIZE > 0,
+                   DEFAULT_BLOCKSIZE);
     readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC,
                    POLL_TIMEOUT_MSEC >= -1, DEFAULT_POLL_TIMEOUT_MSEC);
     readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
