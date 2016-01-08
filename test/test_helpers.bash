@@ -2,6 +2,8 @@
 
 # put the built mkmimo at the front of PATH
 PATH="$(dirname "$BASH_SOURCE")"/..:"$PATH"
+# as well as test utilities
+PATH="$(dirname "$BASH_SOURCE")"/util:"$PATH"
 
 # common setup and teardown across test cases
 setup() {
@@ -9,9 +11,9 @@ setup() {
     MKMIMO_TMPDIR=$(mktemp -d "$BATS_TMPDIR"/mkmimo-tests.XXXXXX)
     pushd "$MKMIMO_TMPDIR" >/dev/null
 }
+
 teardown() {
     popd >/dev/null
     # clean up the temporary directory for tests
     rm -rf "$MKMIMO_TMPDIR"
 }
-

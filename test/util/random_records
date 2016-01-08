@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# random_records -- Generates records with random data
+# $ random_records SIZE[.DEVIATION] [COUNT] [DELIMITER]
+#
+# SIZE is the number of bytes for each record, where the optional DEVIATION can
+# enlarge or shrink each randomly.
+#
+# DELIMITER is output between every record, and no record will contain it.  It
+# should be a single byte.
+#
+# RECORD_COUNT limits the number of records to be generated, and generates
+# infinitely many when left empty.  Defaults to empty.
+##
+set -euo pipefail
+error() { echo >&2 "$@"; false; }
+usage() {
+    sed -n '1d; /^##/q; s/^# [$>] //; p' <"$0"
+    [[ $# -eq 0 ]] || error "$@"
+}
+
+[[ $# -gt 0 ]] || usage "Missing SIZE"
+RecordSize=$1
+RecordCount=${2:-}
+RecordDelimiter=${3:-'\n'}
+
+case $RecordSize in
+    *.*)
+        RecordSizeDeviation=${RecordSize#*.}
+        RecordSize=${RecordSize%%.*}
+        [[ $RecordSizeDeviation -le 32768 ]] ||
+            error "SIZE.DEVIATION greater than 32768 not supported"
+        ;;
+    *)
+        RecordSizeDeviation=0
+esac
+
+if type openssl &>/dev/null; then random_bytes() { openssl rand $1; }
+elif type perl &>/dev/null; then  random_bytes() { perl -e 'print map {chr(int(rand(255)))} 0..$ARGV[0]' $1; }
+else                              random_bytes() { for i in $(seq $1); do printf $"\x$(printf %x $(($RANDOM % 256)))"; done; }
+fi
+
+numbytes=$RecordSize
+i=0
+while [[ -z $RecordCount || $i -lt $RecordCount ]]; do
+    [[ $i -eq 0 ]] ||
+        printf "$RecordDelimiter"
+    [[ $RecordSizeDeviation -eq 0 ]] ||
+        numbytes=$(( $RecordSize + $RANDOM % (2*$RecordSizeDeviation) - $RecordSizeDeviation ))
+    # generate random bytes
+    random_bytes $numbytes |
+    # make sure no DELIMITER appears in the middle of the data
+    tr "$RecordDelimiter" ' '
+    let ++i
+done
