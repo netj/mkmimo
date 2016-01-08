@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_throughput.sh -- Tests throughput with fast/slow sinks
+# mkmimo_throughput -- Tests mkmimo's throughput with fast/slow producers/consumers
 set -eu
 PATH="$(dirname "$0"):$(dirname "$0")/../..:$PATH"
 
