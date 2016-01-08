@@ -28,7 +28,8 @@ static int BLOCKSIZE = DEFAULT_BLOCKSIZE;
 static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 
 // when all output is busy, throttle down by sleeping this much interval
-#define DEFAULT_THROTTLE_SLEEP_MSEC 1
+// FIXME defaulting to busy waiting, need to find a principled way for throttling
+#define DEFAULT_THROTTLE_SLEEP_MSEC 0
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 static struct timespec THROTTLE_TIMESPEC;
 
