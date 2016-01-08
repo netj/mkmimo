@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# mkprocs -- Spawns parallel processes for given command with their inputs/outputs optionally exposed as named pipes
+# $ mkprocs [-w] [-n NUM_PROCS] [-i INPUT_PATH_FORMAT] [-o OUTPUT_PATH_FORMAT] COMMAND [ARG]...
+#
+# $ mkprocs -I process-%s.input -O process-%s.output  python compute-sthg.py
+# $ mkmimo <(random_records 1000) \> process-*.input &
+# $ mkmimo process-*.output \> merged-output
+##
+set -eu
+
+error() { echo >&2 "$@"; false; }
+usage() {
+    sed -n '1d; /^##/q; s/^# [$>] //; p' <"$0"
+    [[ $# -eq 0 ]] || error "$@"
+}
+
+# parse optional arguments
+JustSpawnProcesses=true
+NumProcesses=
+InputPathFmt=  CreateInputPipes=false
+OutputPathFmt= CreateOutputPipes=false
+while getopts "wn:i:I:o:O:" o; do
+    case $o in
+        w)
+            JustSpawnProcesses=false
+            ;;
+        n)
+            NumProcesses=$OPTARG
+            ;;
+        [Ii])
+            InputPathFmt=$OPTARG
+            ;;
+        [Oo])
+            OutputPathFmt=$OPTARG
+            ;;
+    esac
+    case $o in
+        I)
+            CreateInputPipes=true
+            ;;
+        O)
+            CreateOutputPipes=true
+            ;;
+    esac
+done
+shift $(( $OPTIND - 1 ))
+[[ $# -gt 0 ]] || usage "Missing COMMAND"
+Command=$1; shift
+
+# fallback to some default values
+NumProcesses=${NumProcesses:-$(
+        # detect number of processor cores
+        nproc=$(
+            # Linux typically has coreutils which includes nproc
+            nproc ||
+            # OS X
+            sysctl -n hw.ncpu ||
+            # fall back to 1
+            echo 1
+        )
+        [[ $nproc -ge 1 ]] || nproc=1
+        echo $nproc
+    )}
+pids=()
+
+# set up named pipes
+cleanup() {
+    ! $CreateInputPipes || [[ -z $InputPathFmt ]] ||
+        for i in $(seq $NumProcesses); do p=$(printf "$InputPathFmt"  $i); rm -f "$p"; done
+    ! $CreateOutputPipes || [[ -z $OutputPathFmt ]] ||
+        for i in $(seq $NumProcesses); do p=$(printf "$OutputPathFmt" $i); rm -f "$p"; done
+    [[ ${#pids[@]} -eq 0 ]] ||
+        kill -TERM "${pids[@]}" 2>/dev/null || true
+}
+trap cleanup EXIT
+! $CreateInputPipes || [[ -z $InputPathFmt ]] ||
+    for i in $(seq $NumProcesses); do p=$(printf "$InputPathFmt"  $i); rm -f "$p"; mkfifo "$p"; done
+! $CreateOutputPipes || [[ -z $OutputPathFmt ]] ||
+    for i in $(seq $NumProcesses); do p=$(printf "$OutputPathFmt" $i); rm -f "$p"; mkfifo "$p"; done
+
+# spawn processes
+if [[ -n $InputPathFmt && -n $OutputPathFmt ]]; then
+    for i in $(seq $NumProcesses); do
+         in=$(printf "$InputPathFmt"  $i)
+        out=$(printf "$OutputPathFmt" $i)
+        CURRENT_PROCESS_INDEX=$i \
+        "$Command" "$@" <"$in" >"$out" &
+        pids+=($!)
+    done
+elif [[ -n $InputPathFmt  ]]; then  # input-only process
+    for i in $(seq $NumProcesses); do
+         in=$(printf "$InputPathFmt"  $i)
+        CURRENT_PROCESS_INDEX=$i \
+        "$Command" "$@" <"$in" >/dev/null &
+        pids+=($!)
+    done
+elif [[ -n $OutputPathFmt ]]; then  # output-only process
+    for i in $(seq $NumProcesses); do
+        out=$(printf "$OutputPathFmt" $i)
+        CURRENT_PROCESS_INDEX=$i \
+        "$Command" "$@" </dev/null >"$out" &
+        pids+=($!)
+    done
+else  # neither input nor output specified
+    for i in $(seq $NumProcesses); do
+        CURRENT_PROCESS_INDEX=$i \
+        "$Command" "$@" </dev/null >/dev/null &
+        pids+=($!)
+    done
+fi
+
+if $JustSpawnProcesses; then
+    { # spawn another monitoring process for cleaning up
+        trap cleanup EXIT
+        while ps -p "${pids[@]}" &>/dev/null; do sleep 1; done
+    } &
+    trap - EXIT
+else
+    wait  # until all processes are done
+fi
