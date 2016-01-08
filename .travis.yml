@@ -14,6 +14,11 @@ addons:
     - mawk
     - pv
 
+# Using GCE as pv is not whitelisted
+sudo: required
+before_install:
+    - sudo apt-get install -qq -y coreutils bc grep sed mawk pv
+
 install:
 - make
 
