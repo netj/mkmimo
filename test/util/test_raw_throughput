@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# test_throughput.sh -- Tests throughput with fast/slow sinks
+set -eu
+PATH="$(dirname "$0"):$(dirname "$0")/../..:$PATH"
+
+[[ $# -gt 0 ]] ||
+    set -- $(
+        nproc=$(nproc)
+        # find the basis
+        let n=$(factor $nproc | tr ' ' '\n' | tail -n +2 | grep -vxF 2 | tr '\n' '*'; echo 1)
+        while [[ $n -le $(($nproc * 4)) ]]; do
+            echo $n
+            let n*=2
+        done
+    )
+echo >&2 "Running raw_throughput NumPipes= for $*"
+
+for NumPipes; do
+    raw_throughput NumPipes=$NumPipes
+done 

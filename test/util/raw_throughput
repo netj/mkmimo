@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A simple script to measure raw throughput of a machine
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo 'Try: '"$0"' \
+        BlockSize=16k BlockCount=640000 \
+        NumPipes=256'
+else
+    declare -- "$@"
+fi
+
+: ${NumPipes:?number of parallel pipes moving data}
+: ${BlockSize:=16k}
+: ${BlockCount:=640000}  # 10GiB
+
+tmpdir=$(mktemp -d "$PWD"/raw_throughput.XXXXXXX)
+trap 'rm -rf "$tmpdir"' EXIT
+cd "$tmpdir"
+
+bytes=$({
+    command time --format=%e --output=nsecs sh -c '
+        for i in $(seq $1); do
+            pipe=pipe.$i
+            rm -f $pipe
+            mkfifo $pipe
+            dd if=/dev/zero of=$pipe bs=16k count=640000 &>/dev/null &
+            dd if=$pipe of=/dev/null bs=16k &
+        done
+        wait
+        rm -f pipe.*
+    ' -- $NumPipes 2>&1 |
+    grep ' bytes' | awk '{print $1}' |
+    tr '\n' +; echo 0
+} | bc)
+
+throughput=$(bc <<<"$bytes / $(cat nsecs)")
+
+printf "%d\t%d\t%f\t%d\t%'d\t%'d\n" \
+    $NumPipes \
+    $bytes \
+    "$(cat nsecs)" \
+    $throughput \
+    \
+    $bytes \
+    $throughput \
+    #
