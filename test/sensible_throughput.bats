@@ -3,6 +3,7 @@
 load test_helpers
 
 @test "a single slow consumer should not hurt overall throughput (takes 5s)" {
+    type pv || skip "pv unavailable"
     expected_throughput=100000000  # 100MB/s
     nsecs=5
     nbytes=$(
@@ -23,6 +24,7 @@ load test_helpers
 }
 
 @test "slow consumer should not hurt fast consumer's throughput (takes 5-20s)" {
+    type pv || skip "pv unavailable"
     expected_throughput=1000000000  # 1GB/s
     slow_throughput=4k
     nsecs=5
