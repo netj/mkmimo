@@ -7,7 +7,12 @@ compiler:
 addons:
   apt:
     packages:
+    - coreutils
     - bc
+    - grep
+    - sed
+    - mawk
+    - pv
 
 install:
 - make
