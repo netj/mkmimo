@@ -3,18 +3,17 @@
 load test_helpers
 
 @test "a single slow consumer should not hurt overall throughput (takes 5s)" {
-    type pv || skip "pv unavailable"
+    type pv &>/dev/null || skip "pv unavailable"
     expected_throughput=100000000  # 100MB/s
     nsecs=5
-    nbytes=$(
+    nbytes=$(sum_dd_bytes \
         mkmimo_throughput \
             timeout=${nsecs}s \
             num_producer_fast=10 num_producer_slow=0 \
             num_consumer_fast=0 num_consumer_slow=1 \
             producer_slow_throughput=ignored \
             consumer_slow_throughput=${expected_throughput} \
-            2>&1 | grep ' bytes' | awk '{print $1}' | tr '\n' +
-        echo 0
+            #
     )
     throughput=$(bc <<<"$nbytes / $nsecs")
     throughputSatisfactionPercentExpr="100 * $throughput / $expected_throughput"
@@ -24,11 +23,13 @@ load test_helpers
 }
 
 @test "slow consumer should not hurt fast consumer's throughput (takes 5-20s)" {
-    type pv || skip "pv unavailable"
-    expected_throughput=1000000000  # 1GB/s
-    slow_throughput=4k
+    type pv &>/dev/null || skip "pv unavailable"
+    expected_throughput=$(sum_dd_bytes \
+        sh -c 'timeout 1s dd if=/dev/zero 2>/dev/null | dd of=/dev/null'
+    )
+    slow_throughput=16k
     nsecs=5
-    let nbytes=$(
+    nbytes=$(sum_dd_bytes \
         timeout $(($nsecs * 4)) \
         mkmimo_throughput \
             timeout=${nsecs}s \
@@ -37,8 +38,7 @@ load test_helpers
             producer_slow_throughput=ignored \
             consumer_fast_throughput=${expected_throughput} \
             consumer_slow_throughput=${slow_throughput} \
-            2>&1 | grep ' bytes' | awk '{print $1}' | tr '\n' +
-        echo 0
+            #
     )
     throughput=$(bc <<<"$nbytes / $nsecs")
     throughputSatisfactionPercentExpr="100 * $throughput / $expected_throughput"
