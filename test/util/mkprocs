@@ -112,7 +112,8 @@ fi
 if $JustSpawnProcesses; then
     { # spawn another monitoring process for cleaning up
         trap cleanup EXIT
-        while ps -p "${pids[@]}" &>/dev/null; do sleep 1; done
+        [[ ! ${#pids[@]} -gt 0 ]] ||
+            while ps -p "${pids[@]}" &>/dev/null; do sleep 1; done
     } &
     trap - EXIT
 else

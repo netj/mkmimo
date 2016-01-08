@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # random_records -- Generates records with random data
-# $ random_records SIZE[.DEVIATION] [COUNT] [DELIMITER]
+# $ random_records SIZE[~DEVIATION] [COUNT] [DELIMITER]
 #
 # SIZE is the number of bytes for each record, where the optional DEVIATION can
 # enlarge or shrink each randomly.
@@ -24,9 +24,9 @@ RecordCount=${2:-}
 RecordDelimiter=${3:-'\n'}
 
 case $RecordSize in
-    *.*)
-        RecordSizeDeviation=${RecordSize#*.}
-        RecordSize=${RecordSize%%.*}
+    *"~"*)
+        RecordSizeDeviation=${RecordSize#*"~"}
+        RecordSize=${RecordSize%%"~"*}
         [[ $RecordSizeDeviation -le 32768 ]] ||
             error "SIZE.DEVIATION greater than 32768 not supported"
         ;;

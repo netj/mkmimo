@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# test_throughput.sh -- Tests throughput with fast/slow sinks
+set -eu
+PATH="$(dirname "$0"):$(dirname "$0")/../..:$PATH"
+
+# declare all given arguments
+if [[ $# -eq 0 ]]; then
+    echo 'Try: '"$0"' \
+    timeout=5s \
+    record_size=4096~512 record_count=10 \
+    consumer_blocksize=64M \
+    mute_producer_pv=-q mute_consumer_pv= \
+    producer_fast_throughput= producer_slow_throughput=30M \
+    consumer_fast_throughput= consumer_slow_throughput=30M \
+    num_producer_fast=10 num_producer_slow=0 \
+    num_consumer_fast=0 num_consumer_slow=1
+    '
+    false
+else
+    declare -- "$@"
+fi
+
+: \
+    ${num_producer_fast:?Number of fast producer processes} \
+    ${num_producer_slow:?Number of slow producer processes} \
+    ${num_consumer_fast:?Number of fast consumer processes} \
+    ${num_consumer_slow:?Number of slow consumer processes} \
+    ${producer_fast_throughput:=} \
+    ${producer_slow_throughput:?limit B/s for slow producers} \
+    ${consumer_fast_throughput:=} \
+    ${consumer_slow_throughput:?limit B/s for slow consumers} \
+    #
+: \
+    ${timeout:=5s} \
+    ${record_size:=4096~512} \
+    ${record_count:=10} \
+    ${consumer_blocksize=64M} \
+    ${mute_producer_pv:=-q} \
+    ${mute_consumer_pv:=} \
+    #
+
+# create an isolated place
+tmpdir=$(mktemp -d "$PWD"/test_throughput.XXXXXX)
+trap 'rm -rf "$tmpdir"' EXIT
+cd "$tmpdir"
+
+# set up producers/consumers
+mkprocs -n $num_producer_fast -O 'source_fast_%s' sh -c 'timeout '"$timeout"' yes "$(random_records '"$record_size $record_count"')" | pv -N producer_fast_$CURRENT_PROCESS_INDEX'" ${mute_producer_pv:--c} ${producer_fast_throughput:+-L $producer_fast_throughput}"
+mkprocs -n $num_producer_slow -O 'source_slow_%s' sh -c 'timeout '"$timeout"' yes "$(random_records '"$record_size $record_count"')" | pv -N producer_slow_$CURRENT_PROCESS_INDEX'" ${mute_producer_pv:--c} ${producer_slow_throughput:+-L $producer_slow_throughput}"
+mkprocs -n $num_consumer_fast -I 'sink_fast_%s'   sh -c 'pv -N consumer_fast_$CURRENT_PROCESS_INDEX'" ${mute_consumer_pv:--c} ${consumer_fast_throughput:+-L $consumer_fast_throughput} | dd bs=$consumer_blocksize"
+mkprocs -n $num_consumer_slow -I 'sink_slow_%s'   sh -c 'pv -N consumer_slow_$CURRENT_PROCESS_INDEX'" ${mute_consumer_pv:--c} ${consumer_slow_throughput:+-L $consumer_slow_throughput} | dd bs=$consumer_blocksize"
+
+# and connect them
+mkmimo source_* \> sink_*
+
+# patch the tty as pv can mess up
+stty echo
