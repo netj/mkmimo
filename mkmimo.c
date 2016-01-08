@@ -28,7 +28,7 @@ static int BLOCKSIZE = DEFAULT_BLOCKSIZE;
 static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 
 // when all output is busy, throttle down by sleeping this much interval
-#define DEFAULT_THROTTLE_SLEEP_MSEC 100
+#define DEFAULT_THROTTLE_SLEEP_MSEC 1
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 static struct timespec THROTTLE_TIMESPEC;
 
