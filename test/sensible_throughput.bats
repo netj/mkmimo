@@ -24,16 +24,16 @@ load test_helpers
 
 @test "slow consumer should not hurt fast consumer's throughput (takes 5-20s)" {
     type pv &>/dev/null || skip "pv unavailable"
-    expected_throughput=$(sum_dd_bytes \
+    let expected_throughput=$(sum_dd_bytes \
         sh -c 'timeout 1s dd if=/dev/zero 2>/dev/null | dd of=/dev/null'
     )
     slow_throughput=16k
-    nsecs=5
+    nsecs=4
     nbytes=$(sum_dd_bytes \
         timeout $(($nsecs * 4)) \
         mkmimo_throughput \
             timeout=${nsecs}s \
-            num_producer_fast=10 num_producer_slow=0 \
+            num_producer_fast=1 num_producer_slow=0 \
             num_consumer_fast=1 num_consumer_slow=1 \
             producer_slow_throughput=ignored \
             consumer_fast_throughput=${expected_throughput} \
@@ -44,5 +44,5 @@ load test_helpers
     throughputSatisfactionPercentExpr="100 * $throughput / $expected_throughput"
     echo $throughputSatisfactionPercentExpr
     throughputSatisfactionPercent=$(bc <<<"$throughputSatisfactionPercentExpr")
-    [[ $throughputSatisfactionPercent -ge 80 ]]
+    [[ $throughputSatisfactionPercent -ge 50 ]]
 }
