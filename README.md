@@ -24,7 +24,7 @@ PATH="$(brew --prefix coreutils)/libexec/gnubin:$PATH"
 After everything is installed, you can run the tests using:
 
 ```bash 
-make tests
+make test
 ```
 
 To test selectively, run:
