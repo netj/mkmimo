@@ -15,8 +15,8 @@ struct Queue {
 };
 
 Queue *new_queue();
-void push(Queue *q, int *elem);
+void queue(Queue *q, int *elem);
 Node *peek(Queue *q);
-int *pop(Queue *q);
+int *dequeue(Queue *q);
 bool is_empty(Queue *q);
 

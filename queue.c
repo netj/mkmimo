@@ -3,9 +3,6 @@
 typedef struct Node Node;
 typedef struct Queue Queue;
 
-struct Node;
-struct Queue;
-
 Queue *new_queue() {
   Queue *q = (Queue *) malloc(sizeof(Queue));
   q->first = NULL;
@@ -13,7 +10,7 @@ Queue *new_queue() {
   return q;
 }
 
-void push(Queue *q, int *elem) {
+void queue(Queue *q, int *elem) {
   // Create a new queue node
   Node *new_node = (Node *) malloc(sizeof(Node));
   new_node->elem = elem;
@@ -33,7 +30,7 @@ Node* peek(Queue *q) {
   return q->first;
 }
 
-int *pop(Queue *q) {   
+int *dequeue(Queue *q) {   
   int *elem = q->first->elem;
   Node *next = q->first->next;
   free(q->first);
@@ -45,8 +42,4 @@ int *pop(Queue *q) {
 bool is_empty(Queue *q) {       
   if (q->first == NULL) return true;    
   return false;
-}
-
-int main() {
-  return 0;
 }
