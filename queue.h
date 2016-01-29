@@ -1,4 +1,7 @@
-#include <stdio.h>  
+#ifndef QUEUE_H
+#define QUEUE_H
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 
@@ -15,8 +18,9 @@ struct Queue {
 };
 
 Queue *new_queue();
-void queue(Queue *q, int *elem);
+void queue(Queue *q, void *elem);
 Node *peek(Queue *q);
 int *dequeue(Queue *q);
 bool is_empty(Queue *q);
 
+#endif /* QUEUE_H */

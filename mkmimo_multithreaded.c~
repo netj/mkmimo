@@ -1,0 +1,191 @@
+#include "mkmimo.h"
+#include "queue.h"
+
+Buffer *new_buffer() {
+    Buffer *buf = malloc(sizeof(Buffer));
+    if (buf == NULL) {
+        perror("malloc");
+        return NULL;
+    }
+    buf->data = malloc(BLOCKSIZE);
+    if (buf->data == NULL) {
+        perror("malloc");
+        return NULL;
+    }
+    buf->capacity = BLOCKSIZE;
+    buf->begin = 0;
+    buf->size = 0;
+    buf->end_of_last_record = -1;
+    return buf;
+}
+
+static inline void enlarge_buffer(Buffer *buf, size_t new_capacity) {
+    void *buf_larger = realloc(buf->data, new_capacity);
+    if (buf_larger != NULL) {
+        buf->data = buf_larger;
+        buf->capacity = new_capacity;
+    } else {
+        perror("realloc");
+        // TODO handle out of memory more gracefully?
+        abort();
+    }
+}
+
+static inline int open_inputs(char *argv[], Inputs *inputs, Queue *empty_buffers,
+			      int num_in, int std_in) {
+    inputs->num_inputs = num_in;
+    inputs->inputs = calloc(inputs->num_in, sizeof(struct input));
+
+    for (int i = 0; i < inputs->num_in; i++) {
+      // Open file or default to stdin
+      char *name = NAME_FOR_STDIN;
+      int fd = 0;
+      if !(std_in) {
+	  name = argv[1 + i];
+	  fd = open(name, O_RDONLY);
+	  if (fd < 0) {
+	    perrorf("open %s", name);
+	    return 1;
+	  } 
+      }
+
+      // Initialize input struct
+      struct input this = {
+	.fd = fd,
+	.name = name,
+	.buffer = new_buffer(),
+	.is_closed = 0,
+	.is_near_eof = 0,
+	.is_readable = 0,
+	.is_buffered = 0,
+      };
+
+      inputs->inputs[i] = this;
+      // Is this right? Do I want to insert the BUFFER
+      // into the queue, or the whole struct?
+      // Fix casting here
+      queue(empty_buffers, &this.buffer);
+    }
+
+    inputs->last_closed = inputs->num_inputs;
+    return 0;
+}
+
+static inline int open_outputs(char *argv[], Outputs *outputs, Queue *empty_buffers,
+			       int num_out, int base_idx_out, int std_out) {
+    outputs->num_outputs = num_out;
+    outputs->outputs = calloc(num_out, sizeof(Output));
+
+    for (int i = 0; i < num_out; i++) {
+      char *name = NAME_FOR_STDOUT;
+      int fd = 1;
+      if !(stdout) {
+        name = argv[base_idx_out + i];
+        fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
+                      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        if (fd < 0) {
+	  perrorf("open %s", name);
+	  return 1;
+        }
+      }
+      Output this = {
+	.fd = fd,
+        .name = name,
+        .buffer = new_buffer(),
+        .is_closed = 0,
+        .is_writable = 0,
+        .is_busy = 0,
+      };
+      outputs->outputs[i] = this;
+      queue(empty_buffers, &this.buffer);
+    }
+
+    outputs->last_closed = outputs->num_outputs;
+    return 0;
+}
+
+static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
+                                  Outputs *outputs, Queue *empty_buffers) {
+
+    // Count number of inputs and outputs
+    int num_in = 0, num_out = 0, std_in = 0, std_out = 0;
+    int base_idx_out = 1;
+    for (int i = 1; i < argc; ++i) {
+        if (!strncmp(argv[i], ">", 2)) {
+            num_in = num_out;
+            base_idx_out = i + 1;
+            num_out = argc - base_idx_out;
+            break;
+        }
+        ++num_out;
+    }
+    
+    // If no inputs specified, default to stdin/ out
+    if (num_in == 0) {
+      std_in = 1;
+      num_in = 1;
+    }
+    if (num_out == 0) {
+      std_out = 1;
+      num_out = 1;
+    }
+
+    if (open_inputs(argv, inputs, empty_buffers, num_in, std_in)) {
+      return 1;
+    } else if (open_outputs(argv, outputs, empty_buffers, num_out, base_idx_out, std_out) {
+      return 2;
+    }
+    return 0;
+}
+
+static inline void parse_environ(void) {
+    readIntFromEnv(BLOCKSIZE, BLOCKSIZE, BLOCKSIZE > 0,
+                   DEFAULT_BLOCKSIZE);
+    readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC,
+                   POLL_TIMEOUT_MSEC >= -1, DEFAULT_POLL_TIMEOUT_MSEC);
+    readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
+                   THROTTLE_SLEEP_MSEC >= 0, DEFAULT_THROTTLE_SLEEP_MSEC);
+    // prepare nanosleep's timespec for throttling
+    THROTTLE_TIMESPEC.tv_sec = THROTTLE_SLEEP_MSEC / 1000;
+    THROTTLE_TIMESPEC.tv_nsec = (THROTTLE_SLEEP_MSEC % 1000) * 1000000;
+}
+
+int mkmimo_multithreaded(Input *inputs, Output *outputs) {
+    Queue *full_buffers = new_queue(); 
+    Queue *empty_buffers = new_queue();
+
+    parse_environ();
+
+    DEBUG("opening inputs and outputs from %d arguments", argc - 1);
+    Inputs inputs = {0};
+    Outputs outputs = {0};
+    if (parse_arguments(argc, argv, &inputs, &outputs, empty_buffers)) {
+        perror("mkmimo");
+        return 1;
+    }
+
+    DEBUG("num_inputs: %d", inputs.num_inputs);
+    DEBUG("num_outputs: %d", outputs.num_outputs);
+
+    // spin up threads for each input and output
+    // two while loops - dequeue buffer, fill after reading, move to full buffer
+    // grab another empty buffer
+    // output side - dequeue from full side, wait, grab another buffer
+
+    // NOTE: watch out -- we're reading in raw bytes. don't split up records into
+    // the buffer
+
+    while (records_are_flowing_between(&inputs, &outputs)) {
+        write_to_available(&outputs);
+        if (read_from_available(&inputs) > 0)
+            while (exchange_buffered_records(&inputs, &outputs) > 0)
+                write_to_available(&outputs);
+        DEBUG("%s", "----------------------------------------");
+    }
+
+    DEBUG("%s", "all done");
+
+    // TODO cleanup: close all outputs and inputs
+
+    return 0;
+}

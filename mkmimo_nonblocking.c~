@@ -33,17 +33,6 @@ static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 static struct timespec THROTTLE_TIMESPEC;
 
-static char NAME_FOR_STDIN[] = "/dev/stdin";
-static char NAME_FOR_STDOUT[] = "/dev/stdout";
-
-#ifdef DEBUG
-#undef DEBUG
-#define DEBUG(fmt, args...) fprintf(stderr, "[%d] " fmt "\n", getpid(), args)
-#else
-#define DEBUG(fmt, args...)
-#endif  // DEBUG
-
-#define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
 
 struct input;
 typedef struct input_buffer {
@@ -644,23 +633,6 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
 }
 
 static inline void parse_environ(void) {
-#define readIntFromEnv(envName, ConfigVar, condition, defaultValue)     \
-    do {                                                                \
-        char *envValue = getenv(#envName);                              \
-        if (envValue != NULL) {                                         \
-            ConfigVar = atoi(envValue);                                 \
-            if (!(condition)) {                                         \
-                fprintf(stderr,                                         \
-                        "%d: Invalid " #envName ", using default %d\n", \
-                        ConfigVar, defaultValue);                       \
-                ConfigVar = defaultValue;                               \
-            } else {                                                    \
-                DEBUG(#envName "=%d", ConfigVar);                       \
-            }                                                           \
-        }                                                               \
-    } while (0)
-    readIntFromEnv(BLOCKSIZE, BLOCKSIZE, BLOCKSIZE > 0,
-                   DEFAULT_BLOCKSIZE);
     readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC,
                    POLL_TIMEOUT_MSEC >= -1, DEFAULT_POLL_TIMEOUT_MSEC);
     readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
@@ -670,19 +642,8 @@ static inline void parse_environ(void) {
     THROTTLE_TIMESPEC.tv_nsec = (THROTTLE_SLEEP_MSEC % 1000) * 1000000;
 }
 
-int main(int argc, char *argv[]) {
+int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
     parse_environ();
-
-    DEBUG("opening inputs and outputs from %d arguments", argc - 1);
-    Inputs inputs = {0};
-    Outputs outputs = {0};
-    if (parse_arguments(argc, argv, &inputs, &outputs)) {
-        perror("mkmimo");
-        return 1;
-    }
-
-    DEBUG("num_inputs: %d", inputs.num_inputs);
-    DEBUG("num_outputs: %d", outputs.num_outputs);
 
     while (records_are_flowing_between(&inputs, &outputs)) {
         write_to_available(&outputs);
@@ -691,10 +652,6 @@ int main(int argc, char *argv[]) {
                 write_to_available(&outputs);
         DEBUG("%s", "----------------------------------------");
     }
-
-    DEBUG("%s", "all done");
-
-    // TODO cleanup: close all outputs and inputs
 
     return 0;
 }
