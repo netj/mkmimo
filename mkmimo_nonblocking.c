@@ -30,7 +30,7 @@ static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 static struct timespec THROTTLE_TIMESPEC;
 
-static inline int create_buffers(Inputs *inputs, Outputs *outputs) {
+static inline void create_buffers(Inputs *inputs, Outputs *outputs) {
   // Initialize all buffers after arguments parsed in main
   for (int i = 0; i < inputs->num_inputs; i++) {
     inputs->inputs[i].buffer = new_buffer();
@@ -455,11 +455,11 @@ int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
 
   // create buffers
 
-  while (records_are_flowing_between(&inputs, &outputs)) {
-    write_to_available(&outputs);
-    if (read_from_available(&inputs) > 0)
-      while (exchange_buffered_records(&inputs, &outputs) > 0)
-        write_to_available(&outputs);
+  while (records_are_flowing_between(inputs, outputs)) {
+    write_to_available(outputs);
+    if (read_from_available(inputs) > 0)
+      while (exchange_buffered_records(inputs, outputs) > 0)
+        write_to_available(outputs);
     DEBUG("%s", "----------------------------------------");
   }
 

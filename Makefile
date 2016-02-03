@@ -8,10 +8,10 @@ else
 endif
 
 ifdef MULTITHREADED
-mkmimo: mkmimo_multithreaded.o queue.o
+mkmimo: main.o buffer.o mkmimo_multithreaded.o queue.o
 	$(CC) -o $@ $(LDFLAGS) $^
 else
-mkmimo: main.o utils.o mkmimo_nonblocking.o
+mkmimo: main.o buffer.o mkmimo_nonblocking.o
 	$(CC) -o $@ $(LDFLAGS) $^
 endif
 

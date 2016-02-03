@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <time.h>
 #include <errno.h>
+#include "buffer.h"
 
 #ifdef DEBUG
 #undef DEBUG
@@ -21,9 +22,6 @@
 #endif
 
 #define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
-
-#define DEFAULT_BLOCKSIZE (4 * BUFSIZ) // 4096
-extern int BLOCKSIZE;
 
 typedef struct input {
   int fd;

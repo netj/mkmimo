@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "buffer.h"
 
 Buffer *new_buffer() {
   Buffer *buf = malloc(sizeof(Buffer));
