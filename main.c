@@ -129,8 +129,6 @@ static inline void parse_environ(void) {
 }
 
 int main(int argc, char *argv[]) {
-  printf("HI!");
-
   parse_environ();
 
   DEBUG("Opening inputs and outputs from %d arguments...", argc - 1);

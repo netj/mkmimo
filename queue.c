@@ -1,8 +1,5 @@
 #include "queue.h"
 
-typedef struct Node Node;
-typedef struct Queue Queue;
-
 Queue *new_queue() {
   Queue *q = (Queue *)malloc(sizeof(Queue));
   q->first = NULL;

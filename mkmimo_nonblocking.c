@@ -1,9 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
@@ -12,7 +9,7 @@
 #include <time.h>
 #include <errno.h>
 #include "mkmimo_nonblocking.h"
-#include "utils.h"
+#include "buffer.h"
 
 #ifdef __APPLE__
 #define POLLHUP_SUPPORT_UNRELIABLE

@@ -3,6 +3,6 @@
 
 #include "mkmimo.h"
 
-int mkmimo_multithreaded(Input *inputs, Output *outputs);
+int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs);
 
 #endif /* MKMIMO_MULTI_H */
