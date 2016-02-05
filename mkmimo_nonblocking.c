@@ -30,16 +30,6 @@ static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
 static struct timespec THROTTLE_TIMESPEC;
 
-static inline void create_buffers(Inputs *inputs, Outputs *outputs) {
-  // Initialize all buffers after arguments parsed in main
-  for (int i = 0; i < inputs->num_inputs; i++) {
-    inputs->inputs[i].buffer = new_buffer();
-  }
-
-  for (int i = 0; i < outputs->num_outputs; i++) {
-    outputs->outputs[i].buffer = new_buffer();
-  }
-} 
 
 /*----------------------------------------------------------------------
  Portable function to set a socket into nonblocking mode.
@@ -67,9 +57,39 @@ static inline int setNonblocking(int fd) {
 #endif
 }
 
+/**
+ * Initialize an empty buffer for each input and output, set all of
+ * the sockets to be nonblocking.
+ */
+static inline int initialize_ios(Inputs *inputs, Outputs *outputs) {
+  for (int i = 0; i < inputs->num_inputs; i++) {
+    inputs->inputs[i].buffer = new_buffer();
+
+    Input input = inputs->inputs[i];
+    if (setNonblocking(input.fd) < 0) {
+      perrorf("setNonblocking %s", input.name);
+      return 1;
+    }
+  }
+
+  for (int i = 0; i < outputs->num_outputs; i++) {
+    outputs->outputs[i].buffer = new_buffer();
+
+    Output output = outputs->outputs[i];
+    if (setNonblocking(output.fd) < 0) {
+      perrorf("setNonblocking %s", output.name);
+      return 2;
+    }
+  }
+  return 0;
+} 
+
+/**
+ * Move closed inputs and outputs to the end of the list and exclude
+ * them from polling.
+ */
 static inline void move_closed_inputs_outputs_to_the_end(Inputs *inputs,
                                                          Outputs *outputs) {
-  // move closed inputs/outputs to the end and exclude from polling
   if (inputs->num_inputs - inputs->last_closed < inputs->num_closed)
     for (int i = 0; i < inputs->last_closed; ++i) {
       Input *input = &inputs->inputs[i];
@@ -451,9 +471,10 @@ static inline void parse_environ(void) {
 
 int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
   parse_environ();
-  create_buffers(inputs, outputs);
-
-  // create buffers
+  if (initialize_ios(inputs, outputs)) {
+    perror("mkmimo");
+    return 1;
+  }
 
   while (records_are_flowing_between(inputs, outputs)) {
     write_to_available(outputs);
