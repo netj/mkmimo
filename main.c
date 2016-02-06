@@ -68,7 +68,7 @@ static inline int open_outputs(char *argv[], Outputs *outputs, int num_out,
   for (int i = 0; i < num_out; i++) {
     char *name = NAME_FOR_STDOUT;
     int fd = 1;
-    if (!stdout) {
+    if (!std_out) {
         name = argv[base_idx_out + i];
         fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
