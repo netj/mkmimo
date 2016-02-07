@@ -38,3 +38,17 @@ To exclude certain tests:
 ```bash
 make test EXCEPT+=/path/to/bats/files
 ```
+
+### Formatting Code
+
+To format all code:
+
+```bash
+make format
+```
+
+To specify which `clang-format` to use:
+
+```bash
+make format CLANG_FORMAT=clang-format-3.4
+```

@@ -37,22 +37,24 @@ static inline int open_inputs(char *argv[], Inputs *inputs, int num_in,
     char *name = NAME_FOR_STDIN;
     int fd = 0;
     if (!use_stdin) {
-        name = argv[1 + i];
-        fd = open(name, O_RDONLY);
-        if (fd < 0) {
-          perrorf("open %s", name);
-          return 1;
-        }
+      name = argv[1 + i];
+      fd = open(name, O_RDONLY);
+      if (fd < 0) {
+        perrorf("open %s", name);
+        return 1;
       }
+    }
 
     // Initialize input struct
-    struct input this = { .fd = fd,
-                          .name = name,
-                          .buffer = NULL,
-                          .is_closed = 0,
-                          .is_near_eof = 0,
-                          .is_readable = 0,
-                          .is_buffered = 0, };
+    struct input this = {
+        .fd = fd,
+        .name = name,
+        .buffer = NULL,
+        .is_closed = 0,
+        .is_near_eof = 0,
+        .is_readable = 0,
+        .is_buffered = 0,
+    };
 
     inputs->inputs[i] = this;
   }
@@ -70,20 +72,22 @@ static inline int open_outputs(char *argv[], Outputs *outputs, int num_out,
     char *name = NAME_FOR_STDOUT;
     int fd = 1;
     if (!use_stdout) {
-        name = argv[base_idx_out + i];
-        fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
-                  S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        if (fd < 0) {
-          perrorf("open %s", name);
-          return 1;
-        }
+      name = argv[base_idx_out + i];
+      fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
+                S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+      if (fd < 0) {
+        perrorf("open %s", name);
+        return 1;
       }
-    struct output this = { .fd = fd,
-                    .name = name,
-                    .buffer = NULL,
-                    .is_closed = 0,
-                    .is_writable = 0,
-                    .is_busy = 0, };
+    }
+    struct output this = {
+        .fd = fd,
+        .name = name,
+        .buffer = NULL,
+        .is_closed = 0,
+        .is_writable = 0,
+        .is_busy = 0,
+    };
     outputs->outputs[i] = this;
   }
 
@@ -93,7 +97,6 @@ static inline int open_outputs(char *argv[], Outputs *outputs, int num_out,
 
 static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                                   Outputs *outputs) {
-
   // Count number of inputs and outputs
   int num_in = 0, num_out = 0;
   bool use_stdin = false, use_stdout = false;
@@ -134,8 +137,8 @@ int main(int argc, char *argv[]) {
   parse_environ();
 
   DEBUG("Opening inputs and outputs from %d arguments...", argc - 1);
-  Inputs inputs = { 0 };
-  Outputs outputs = { 0 };
+  Inputs inputs = {0};
+  Outputs outputs = {0};
   if (parse_arguments(argc, argv, &inputs, &outputs)) {
     perror("mkmimo");
     return 1;
@@ -144,7 +147,7 @@ int main(int argc, char *argv[]) {
   DEBUG("Reading from %d inputs...", inputs.num_inputs);
   DEBUG("Writing to %d outputs...", outputs.num_outputs);
 
-  if (1) { // TODO
+  if (1) {  // TODO
     mkmimo_nonblocking(&inputs, &outputs);
   } else {
     mkmimo_multithreaded(&inputs, &outputs);

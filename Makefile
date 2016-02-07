@@ -24,3 +24,8 @@ test-build: mkmimo
 clean:
 	rm -f mkmimo *.o
 .PHONY: clean
+
+.PHONY: format
+CLANG_FORMAT = clang-format
+format:
+	$(CLANG_FORMAT) -i *.[ch]
