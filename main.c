@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -27,7 +28,7 @@ static inline void clean_up(Inputs *inputs, Outputs *outputs) {
 }
 
 static inline int open_inputs(char *argv[], Inputs *inputs, int num_in,
-                              int std_in) {
+                              bool use_stdin) {
   inputs->num_inputs = num_in;
   inputs->inputs = calloc(inputs->num_inputs, sizeof(struct input));
 
@@ -35,7 +36,7 @@ static inline int open_inputs(char *argv[], Inputs *inputs, int num_in,
     // Open file or default to stdin
     char *name = NAME_FOR_STDIN;
     int fd = 0;
-    if (!std_in) {
+    if (!use_stdin) {
         name = argv[1 + i];
         fd = open(name, O_RDONLY);
         if (fd < 0) {
@@ -61,14 +62,14 @@ static inline int open_inputs(char *argv[], Inputs *inputs, int num_in,
 }
 
 static inline int open_outputs(char *argv[], Outputs *outputs, int num_out,
-                               int base_idx_out, int std_out) {
+                               int base_idx_out, bool use_stdout) {
   outputs->num_outputs = num_out;
   outputs->outputs = calloc(num_out, sizeof(Output));
 
   for (int i = 0; i < num_out; i++) {
     char *name = NAME_FOR_STDOUT;
     int fd = 1;
-    if (!std_out) {
+    if (!use_stdout) {
         name = argv[base_idx_out + i];
         fd = open(name, O_WRONLY | O_CREAT | O_TRUNC,
                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -94,7 +95,8 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
                                   Outputs *outputs) {
 
   // Count number of inputs and outputs
-  int num_in = 0, num_out = 0, std_in = 0, std_out = 0;
+  int num_in = 0, num_out = 0;
+  bool use_stdin = false, use_stdout = false;
   int base_idx_out = 1;
   for (int i = 1; i < argc; ++i) {
     if (!strncmp(argv[i], ">", 2)) {
@@ -108,17 +110,17 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
 
   // If no inputs specified, default to stdin/ out
   if (num_in == 0) {
-    std_in = 1;
+    use_stdin = true;
     num_in = 1;
   }
   if (num_out == 0) {
-    std_out = 1;
+    use_stdout = true;
     num_out = 1;
   }
 
-  if (open_inputs(argv, inputs, num_in, std_in)) {
+  if (open_inputs(argv, inputs, num_in, use_stdin)) {
     return 1;
-  } else if (open_outputs(argv, outputs, num_out, base_idx_out, std_out)) {
+  } else if (open_outputs(argv, outputs, num_out, base_idx_out, use_stdout)) {
     return 2;
   }
   return 0;
