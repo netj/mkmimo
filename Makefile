@@ -7,13 +7,8 @@ else
     CFLAGS += -O2
 endif
 
-ifdef MULTITHREADED
-mkmimo: main.o buffer.o mkmimo_multithreaded.o queue.o
+mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o
 	$(CC) -o $@ $(LDFLAGS) $^
-else
-mkmimo: main.o buffer.o mkmimo_nonblocking.o
-	$(CC) -o $@ $(LDFLAGS) $^
-endif
 
 PATH := $(shell pwd):$(PATH)
 export PATH

@@ -6,10 +6,10 @@
 //}
 
 int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
-  Queue *full_buffers = new_queue();
-  Queue *empty_buffers = new_queue();
+  // Queue *full_buffers = new_queue();
+  // Queue *empty_buffers = new_queue();
 
   // initialize_buffers();
 
-  return 0;
+  return 1; // Not implemented yet
 }

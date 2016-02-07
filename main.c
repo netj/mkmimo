@@ -14,6 +14,9 @@
 #include "mkmimo_nonblocking.h"
 #include "mkmimo_multithreaded.h"
 
+// function pointer to the mkmimo implementation to use
+static int (*mkmimo)(Inputs *, Outputs *) = NULL;
+
 /* Declared externally in mkmimo.h */
 int BLOCKSIZE = DEFAULT_BLOCKSIZE;
 
@@ -130,6 +133,20 @@ static inline int parse_arguments(int argc, char *argv[], Inputs *inputs,
 }
 
 static inline void parse_environ(void) {
+  // determine which implementation to use
+  char *impl = getenv("MKMIMO_IMPL");
+  if (impl == NULL) {
+    // use nonblocking implementation by default
+    mkmimo = mkmimo_nonblocking;
+  } else if (!strcmp(impl, "nonblocking")) {
+    mkmimo = mkmimo_nonblocking;
+  } else if (!strcmp(impl, "multithreaded")) {
+    mkmimo = mkmimo_multithreaded;
+  } else {
+    fprintf(stderr, "%s: Invalid MKMIMO_IMPL\n", impl);
+    exit(1);
+  }
+  // get initial buffer size
   readIntFromEnv(BLOCKSIZE, BLOCKSIZE, BLOCKSIZE > 0, DEFAULT_BLOCKSIZE);
 }
 
@@ -147,13 +164,10 @@ int main(int argc, char *argv[]) {
   DEBUG("Reading from %d inputs...", inputs.num_inputs);
   DEBUG("Writing to %d outputs...", outputs.num_outputs);
 
-  if (1) {  // TODO
-    mkmimo_nonblocking(&inputs, &outputs);
-  } else {
-    mkmimo_multithreaded(&inputs, &outputs);
-  }
+  int exitstatus = mkmimo(&inputs, &outputs);
 
   clean_up(&inputs, &outputs);
   DEBUG("%s", "All done!");
-  return 0;
+
+  return exitstatus;
 }
