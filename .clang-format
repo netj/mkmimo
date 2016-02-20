@@ -1,10 +1,13 @@
 # A reasonable format for C/C++
+# See: https://google.github.io/styleguide/cppguide.html
+# Got by: clang-format-3.7 -style=Google -dump-config
 # See: http://clangformat.com
-# Got by clang-format -style=Google -dump-config
+---
 Language:        Cpp
 # BasedOnStyle:  Google
 AccessModifierOffset: -1
 AlignAfterOpenBracket: true
+AlignConsecutiveAssignments: false
 AlignEscapedNewlinesLeft: true
 AlignOperands:   true
 AlignTrailingComments: true
@@ -14,6 +17,7 @@ AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: true
 AllowShortLoopsOnASingleLine: true
+AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: true
 BinPackArguments: true
@@ -36,6 +40,8 @@ IndentCaseLabels: true
 IndentWidth:     2
 IndentWrappedFunctionNames: false
 KeepEmptyLinesAtTheStartOfBlocks: false
+MacroBlockBegin: ''
+MacroBlockEnd:   ''
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCBlockIndentWidth: 2

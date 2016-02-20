@@ -21,6 +21,12 @@ clean:
 .PHONY: clean
 
 .PHONY: format
+ifndef CLANG_FORMAT
+ifneq ($(shell type clang-format-3.7 2>/dev/null),)
+CLANG_FORMAT = clang-format-3.7
+else
 CLANG_FORMAT = clang-format
+endif
+endif
 format:
 	$(CLANG_FORMAT) -i *.[ch]

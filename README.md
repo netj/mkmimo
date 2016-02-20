@@ -50,5 +50,5 @@ make format
 To specify which `clang-format` to use:
 
 ```bash
-make format CLANG_FORMAT=clang-format-3.4
+make format CLANG_FORMAT=clang-format-3.7
 ```

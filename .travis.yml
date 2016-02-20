@@ -6,21 +6,35 @@ compiler:
 
 addons:
   apt:
-    packages:
+    sources:
+      - llvm-toolchain-precise-3.7  # for clang-format-3.7
+      - ubuntu-toolchain-r-test     # for gcc
+  packages:
     - coreutils
     - bc
     - grep
     - sed
     - mawk
     - pv
+    - clang-format-3.7
 
 # Using GCE as pv is not whitelisted
 sudo: required
 before_install:
-    - sudo apt-get install -qq -y coreutils bc grep sed mawk pv
+  # for clang-format-3.7
+  - wget -O - "http://llvm.org/apt/llvm-snapshot.gpg.key" | sudo apt-key add -
+  - echo "deb http://llvm.org/apt/precise/ llvm-toolchain-precise-3.7 main" | sudo tee -a /etc/apt/sources.list >/dev/null
+  # for gcc
+  - sudo apt-add-repository -y "ppa:ubuntu-toolchain-r/test"
+  - sudo apt-get update -yq
+  # required packages
+  - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7
+  # code should be already formatted
+  - make format CLANG_FORMAT=clang-format-3.7
+  - test $(git status --porcelain | wc -l) -eq 0 || { git diff; false; }
 
 install:
-- make
+  - make
 
 script:
-- make test
+  - make test

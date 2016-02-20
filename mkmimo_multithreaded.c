@@ -11,5 +11,5 @@ int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
 
   // initialize_buffers();
 
-  return 1; // Not implemented yet
+  return 1;  // Not implemented yet
 }
