@@ -39,6 +39,22 @@ To exclude certain tests:
 make test EXCEPT+=/path/to/bats/files
 ```
 
+### Switch Between Implementations
+
+The current default when building mkmimo is to run the nonblocking implemenation. To build the multithreaded implementation, use the `MKMIMO_IMPL` flag:
+
+```bash
+make clean MKMIMO_IMPL=multithreaded
+```
+
+### Debugging
+
+To print debug statements, build with the debug flag:
+
+```bash
+make clean DEBUG=1
+```
+
 ### Formatting Code
 
 To format all code:
