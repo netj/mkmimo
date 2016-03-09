@@ -7,8 +7,12 @@ else
     CFLAGS += -O2
 endif
 
+ifneq ($(MKMIMO_IMPL),bash)
 mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o
 	$(CC) -o $@ $(LDFLAGS) $^
+else
+mkmimo: mkmimo.sh
+endif
 
 PATH := $(shell pwd):$(PATH)
 export PATH
