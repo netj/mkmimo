@@ -10,8 +10,8 @@ load test_helpers
 
     # run cat
     numlines_by_cat=$(generate_input | cat | wc -l)
-    # run mkmimo (without any throttling down)
-    numlines_by_mkmimo=$(generate_input | THROTTLE_SLEEP_MSEC=0 mkmimo 2>/dev/null | wc -l)
+    # run mkmimo
+    numlines_by_mkmimo=$(generate_input | mkmimo 2>/dev/null | wc -l)
 
     echo "numlines_by_cat    = $numlines_by_cat"
     echo "numlines_by_mkmimo = $numlines_by_mkmimo"

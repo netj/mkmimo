@@ -2,6 +2,8 @@
 # Test if mkmimo shows reasonable throughput on corner cases
 load test_helpers
 
+num_producer_fast=20
+
 @test "a single slow consumer should not hurt overall throughput (takes 5s)" {
     type pv &>/dev/null || skip "pv unavailable"
     expected_throughput=100000000  # 100MB/s
@@ -9,7 +11,7 @@ load test_helpers
     nbytes=$(sum_dd_bytes \
         mkmimo_throughput \
             timeout=${nsecs}s \
-            num_producer_fast=10 num_producer_slow=0 \
+            num_producer_fast=$num_producer_fast num_producer_slow=0 \
             num_consumer_fast=0 num_consumer_slow=1 \
             producer_slow_throughput=ignored \
             consumer_slow_throughput=${expected_throughput} \
@@ -33,7 +35,7 @@ load test_helpers
         timeout $(($nsecs * 4)) \
         mkmimo_throughput \
             timeout=${nsecs}s \
-            num_producer_fast=1 num_producer_slow=0 \
+            num_producer_fast=$num_producer_fast num_producer_slow=0 \
             num_consumer_fast=1 num_consumer_slow=1 \
             producer_slow_throughput=ignored \
             consumer_fast_throughput=${expected_throughput} \

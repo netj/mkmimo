@@ -24,10 +24,8 @@
 static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 
 // when all output is busy, throttle down by sleeping this much interval
-// FIXME defaulting to busy waiting, need to find a principled way for
-// throttling
-#define DEFAULT_THROTTLE_SLEEP_MSEC 0
-static int THROTTLE_SLEEP_MSEC = DEFAULT_THROTTLE_SLEEP_MSEC;
+#define DEFAULT_THROTTLE_SLEEP_USEC 100
+static int THROTTLE_SLEEP_USEC = DEFAULT_THROTTLE_SLEEP_USEC;
 static struct timespec THROTTLE_TIMESPEC;
 
 /*----------------------------------------------------------------------
@@ -181,12 +179,6 @@ static inline int records_are_flowing_between(Inputs *inputs,
       if (p->events != 0) ++num_outputs_to_actually_poll;
     }
   }
-  // throttle down if all outputs are busy
-  if (outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
-    DEBUG("throttling down poll %d ms as all outputs are busy",
-          THROTTLE_SLEEP_MSEC);
-    nanosleep(&THROTTLE_TIMESPEC, NULL);
-  }
   // use poll(2) to wait for any I/O events
   DEBUG("polling %d inputs and %d outputs", num_inputs_to_actually_poll,
         num_outputs_to_actually_poll);
@@ -215,6 +207,13 @@ static inline int records_are_flowing_between(Inputs *inputs,
     }
     DEBUG("poll returned, found %d readable inputs, %d writable outputs",
           inputs->num_readable, outputs->num_writable);
+    // throttle down if all outputs are busy
+    if (inputs->num_readable + outputs->num_writable == 0 ||
+        outputs->num_busy == outputs->num_outputs - outputs->num_closed) {
+      DEBUG("throttling down poll %d ms as all outputs are busy",
+            THROTTLE_SLEEP_USEC);
+      nanosleep(&THROTTLE_TIMESPEC, NULL);
+    }
     return 1;
   } else {
     // timeout before any events
@@ -442,11 +441,11 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
 static inline void parse_environ(void) {
   readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC >= -1,
                  DEFAULT_POLL_TIMEOUT_MSEC);
-  readIntFromEnv(THROTTLE_SLEEP_MSEC, THROTTLE_SLEEP_MSEC,
-                 THROTTLE_SLEEP_MSEC >= 0, DEFAULT_THROTTLE_SLEEP_MSEC);
+  readIntFromEnv(THROTTLE_SLEEP_USEC, THROTTLE_SLEEP_USEC,
+                 THROTTLE_SLEEP_USEC >= 0, DEFAULT_THROTTLE_SLEEP_USEC);
   // prepare nanosleep's timespec for throttling
-  THROTTLE_TIMESPEC.tv_sec = THROTTLE_SLEEP_MSEC / 1000;
-  THROTTLE_TIMESPEC.tv_nsec = (THROTTLE_SLEEP_MSEC % 1000) * 1000000;
+  THROTTLE_TIMESPEC.tv_sec = THROTTLE_SLEEP_USEC / 1000000;
+  THROTTLE_TIMESPEC.tv_nsec = (THROTTLE_SLEEP_USEC % 1000000) * 1000;
 }
 
 int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
