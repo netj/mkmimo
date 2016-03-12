@@ -25,7 +25,7 @@ void queue(Queue *q, void *elem) {
 
 Node *peek(Queue *q) { return q->first; }
 
-int *dequeue(Queue *q) {
+void *dequeue(Queue *q) {
   int *elem = q->first->elem;
   Node *next = q->first->next;
   free(q->first);
@@ -35,6 +35,7 @@ int *dequeue(Queue *q) {
 }
 
 bool is_empty(Queue *q) {
-  if (q->first == NULL) return true;
+  if (q->first == NULL)
+    return true;
   return false;
 }

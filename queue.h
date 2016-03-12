@@ -20,7 +20,7 @@ struct Queue {
 Queue *new_queue();
 void queue(Queue *q, void *elem);
 Node *peek(Queue *q);
-int *dequeue(Queue *q);
+void *dequeue(Queue *q);
 bool is_empty(Queue *q);
 
 #endif /* QUEUE_H */

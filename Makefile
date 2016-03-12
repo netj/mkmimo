@@ -7,7 +7,7 @@ else
     CFLAGS += -O2
 endif
 
-mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o
+mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o -lpthread
 	$(CC) -o $@ $(LDFLAGS) $^
 
 PATH := $(shell pwd):$(PATH)
