@@ -1,5 +1,10 @@
 #define _POSIX_C_SOURCE 200809L
 
+#ifdef __APPLE__
+#define POLLHUP_SUPPORT_UNRELIABLE
+#define _DARWIN_C_SOURCE
+#endif
+
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -8,12 +13,9 @@
 #include <poll.h>
 #include <time.h>
 #include <errno.h>
+#include <signal.h>
 #include "mkmimo_nonblocking.h"
 #include "buffer.h"
-
-#ifdef __APPLE__
-#define POLLHUP_SUPPORT_UNRELIABLE
-#endif
 
 // when POLLHUP support is unreliable, use a timeout to detect input EOFs
 #ifdef POLLHUP_SUPPORT_UNRELIABLE
@@ -438,6 +440,53 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
   return num_exchanges;
 }
 
+static Inputs *inputs_to_print;
+static Outputs *outputs_to_print;
+static void print_state(int sig) {
+  fprintf(stderr,
+          "inputs  = buffered=%d / readable=%d / open=%d / %d\n"
+          "outputs =     busy=%d / writable=%d / open=%d / %d\n"
+          //
+          ,
+          inputs_to_print->num_buffered, inputs_to_print->num_readable,
+          inputs_to_print->num_inputs - outputs_to_print->num_closed,
+          inputs_to_print->num_inputs
+          //
+          ,
+          outputs_to_print->num_busy, outputs_to_print->num_writable,
+          outputs_to_print->num_outputs - outputs_to_print->num_closed,
+          outputs_to_print->num_outputs);
+  for (int i = 0; i < inputs_to_print->num_inputs; ++i) {
+    Input *input = &inputs_to_print->inputs[i];
+    fprintf(stderr,
+            "I %3d: %s:\t"
+            " is_closed=%d"
+            " is_readable=%d"
+            " is_buffered=%d"
+            " buffer=%p (%d/%d; %d:%d)"
+            " is_near_eof=%d"
+            "\n",
+            input->fd, input->name, input->is_closed, input->is_readable,
+            input->is_buffered, input->buffer->data, input->buffer->size,
+            input->buffer->capacity, input->buffer->begin,
+            input->buffer->end_of_last_record, input->is_near_eof);
+  }
+  for (int i = 0; i < outputs_to_print->num_outputs; ++i) {
+    Output *output = &outputs_to_print->outputs[i];
+    fprintf(stderr,
+            "O %3d: %s:\t"
+            " is_closed=%d"
+            " is_writable=%d"
+            " is_busy=%d    "
+            " buffer=%p (%d/%d; %d:%d)"
+            "\n",
+            output->fd, output->name, output->is_closed, output->is_writable,
+            output->is_busy, output->buffer->data, output->buffer->size,
+            output->buffer->capacity, output->buffer->begin,
+            output->buffer->end_of_last_record);
+  }
+}
+
 static inline void parse_environ(void) {
   readIntFromEnv(POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC, POLL_TIMEOUT_MSEC >= -1,
                  DEFAULT_POLL_TIMEOUT_MSEC);
@@ -454,6 +503,13 @@ int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
     perror("mkmimo");
     return 1;
   }
+
+  inputs_to_print = inputs;
+  outputs_to_print = outputs;
+#ifdef _DARWIN_C_SOURCE
+  signal(SIGINFO, print_state);
+#endif
+  signal(SIGQUIT, print_state);
 
   while (records_are_flowing_between(inputs, outputs)) {
     write_to_available(outputs);
