@@ -38,3 +38,19 @@ bool is_empty(Queue *q) {
   if (q->first == NULL) return true;
   return false;
 }
+
+void queue_and_signal(Queue *q, void *elem) {
+  pthread_mutex_lock(&(q->lock));
+  queue(q, elem);
+  pthread_cond_signal(&(q->is_non_empty));
+}
+
+void *dequeue_or_wait(Queue *q) {
+  pthread_mutex_lock(&(q->lock));
+  while (is_empty(q)) {
+    pthread_cond_wait(&(q->is_non_empty), &(q->lock));
+  }
+  void *elem = dequeue(q);
+  pthread_mutex_unlock(&(q->lock));
+  return elem;
+}

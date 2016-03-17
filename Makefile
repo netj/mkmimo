@@ -6,9 +6,10 @@ ifdef DEBUG
 else
     CFLAGS += -O2
 endif
+LDLIBS += -lpthread
 
-mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o -lpthread
-	$(CC) -o $@ $(LDFLAGS) $^
+mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o
+	$(CC) -o $@ $(LDFLAGS) $^ $(LDLIBS)
 
 PATH := $(shell pwd):$(PATH)
 export PATH
