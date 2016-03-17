@@ -22,18 +22,20 @@ int num_input_threads;
 pthread_mutex_t num_threads_lock;
 
 /* Macros */
-#define synchronized(fncall, mutex) do {	\
-	pthread_mutex_lock(&mutex); \
-	fncall; \
-	pthread_mutex_unlock(&mutex); \
-} while(0)
+#define synchronized(fncall, mutex) \
+  do {                              \
+    pthread_mutex_lock(&mutex);     \
+    fncall;                         \
+    pthread_mutex_unlock(&mutex);   \
+  } while (0)
 
-#define synchronized_with_value(type, fncall, mutex) {	\
-	pthread_mutex_lock(&mutex); \
-	type retval = fncall; \
-	pthread_mutex_unlock(&mutex); \
-	retval \
-}
+#define synchronized_with_value(type, fncall, mutex) \
+  {                                                  \
+    pthread_mutex_lock(&mutex);                      \
+    type retval = fncall;                            \
+    pthread_mutex_unlock(&mutex);                    \
+    retval                                           \
+  }
 
 /**
  * Find the last record separator in a full buffer.
@@ -140,8 +142,9 @@ static inline Buffer *dequeue_empty_buffer() {
   return buf;
 }
 
-static inline void queue_buffer(Buffer *buf, Queue *q, pthread_mutex_t *q_lock, pthread_mutex_t *count_lock, 
-				int *count, pthread_cond_t *cond_var) {
+static inline void queue_buffer(Buffer *buf, Queue *q, pthread_mutex_t *q_lock,
+                                pthread_mutex_t *count_lock, int *count,
+                                pthread_cond_t *cond_var) {
   pthread_mutex_lock(q_lock);
   queue(q, buf);
   pthread_mutex_unlock(q_lock);
@@ -173,8 +176,9 @@ static inline void *input_thread(void *arg) {
     }
 
     if (input->buffer->size > 0) {
-      queue_buffer(input->buffer, full_buffers, &full_buffers_lock, 
-		   &full_buffers_count_lock, &full_buffers_count, &full_buffers_count_nonzero);
+      queue_buffer(input->buffer, full_buffers, &full_buffers_lock,
+                   &full_buffers_count_lock, &full_buffers_count,
+                   &full_buffers_count_nonzero);
       input->buffer = overflow;
     }
   }
@@ -230,8 +234,9 @@ static inline int empty_buffer(Output *output, Buffer *buf) {
     DEBUG("%s: output closed due to error", output->name);
     close(output->fd);
     output->is_closed = 1;
-    queue_buffer(buf, full_buffers, &full_buffers_lock, 
-		 &full_buffers_count_lock, &full_buffers_count, &full_buffers_count_nonzero);
+    queue_buffer(buf, full_buffers, &full_buffers_lock,
+                 &full_buffers_count_lock, &full_buffers_count,
+                 &full_buffers_count_nonzero);
     return 1;
   }
 
@@ -246,7 +251,7 @@ static inline int empty_buffer(Output *output, Buffer *buf) {
  * buffer back into the empty buffer queue.
  */
 static inline void *output_thread(void *arg) {
-  Output *output = arg; //*((output *) arg);
+  Output *output = arg;  //*((output *) arg);
 
   while (!output->is_closed && more_output()) {
     pthread_mutex_lock(&full_buffers_lock);
@@ -257,8 +262,9 @@ static inline void *output_thread(void *arg) {
       // Emptying the buffer failed
       continue;
     }
-    queue_buffer(output->buffer, empty_buffers, &empty_buffers_lock, 
-		 &empty_buffers_count_lock, &empty_buffers_count, &empty_buffers_count_nonzero);
+    queue_buffer(output->buffer, empty_buffers, &empty_buffers_lock,
+                 &empty_buffers_count_lock, &empty_buffers_count,
+                 &empty_buffers_count_nonzero);
   }
   return 0;
 }
@@ -271,8 +277,9 @@ static inline void initialize_buffers(Inputs *inputs, Outputs *outputs,
   int num_buffers = (2 * inputs->num_inputs) + outputs->num_outputs;
   DEBUG("Adding %d to the empty buffers queue.", num_buffers);
   for (int i = 0; i < num_buffers; i++) {
-    queue_buffer(new_buffer(), empty_buffers, &empty_buffers_lock, 
-		 &empty_buffers_count_lock, &empty_buffers_count, &empty_buffers_count_nonzero);
+    queue_buffer(new_buffer(), empty_buffers, &empty_buffers_lock,
+                 &empty_buffers_count_lock, &empty_buffers_count,
+                 &empty_buffers_count_nonzero);
   }
 }
 
@@ -295,7 +302,7 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   for (int i = 0; i < outputs->num_outputs; i++) {
     DEBUG("Spawning output thread number %d.", i);
     if (pthread_create(&threads[i + inputs->num_inputs], NULL, output_thread,
-		       &(outputs->outputs[i]))) {
+                       &(outputs->outputs[i]))) {
       perror("pthread_create");
       return 1;
     }

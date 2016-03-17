@@ -46,8 +46,7 @@ static inline int setNonblocking(int fd) {
 /* If they have O_NONBLOCK, use the Posix way to do it */
 #if defined(O_NONBLOCK)
   /* Fixme: O_NONBLOCK is defined but broken on SunOS 4.1.x and AIX 3.2.5. */
-  if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
-    flags = 0;
+  if (-1 == (flags = fcntl(fd, F_GETFL, 0))) flags = 0;
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 #else
   /* Otherwise, use the old way of doing it */
@@ -92,17 +91,14 @@ static inline void move_closed_inputs_outputs_to_the_end(Inputs *inputs,
   if (inputs->num_inputs - inputs->last_closed < inputs->num_closed)
     for (int i = 0; i < inputs->last_closed; ++i) {
       Input *input = &inputs->inputs[i];
-      if (!input->is_closed)
-        continue;
+      if (!input->is_closed) continue;
       input->is_readable = 0;
       // find the last input not closed
       int j = inputs->last_closed - 1;
-      while (j > i && inputs->inputs[j].is_closed)
-        --j;
+      while (j > i && inputs->inputs[j].is_closed) --j;
       inputs->last_closed = j;
       // stop if everything past this input is closed
-      if (j <= i)
-        break;
+      if (j <= i) break;
       // move the closed one to the end
       DEBUG("moving closed input %s to back: %d", input->name, j);
       Input tmp = *input;
@@ -112,17 +108,14 @@ static inline void move_closed_inputs_outputs_to_the_end(Inputs *inputs,
   if (outputs->num_outputs - outputs->last_closed < outputs->num_closed)
     for (int i = 0; i < outputs->last_closed; ++i) {
       Output *output = &outputs->outputs[i];
-      if (!output->is_closed)
-        continue;
+      if (!output->is_closed) continue;
       output->is_writable = 0;
       // find the last output not closed
       int j = outputs->last_closed - 1;
-      while (j > i && outputs->outputs[j].is_closed)
-        --j;
+      while (j > i && outputs->outputs[j].is_closed) --j;
       outputs->last_closed = j;
       // stop if everything past this output is closed
-      if (j <= i)
-        break;
+      if (j <= i) break;
       // move the closed one to the end
       DEBUG("moving closed output %s to back", output->name);
       Output tmp = *output;
@@ -145,10 +138,11 @@ static inline int records_are_flowing_between(Inputs *inputs,
     DEBUG("%s", "no data flow possible, skipping polling");
     return 0;
   } else
-    DEBUG("%d open inputs, %d buffered inputs, %d open outputs, %d busy "
-          "outputs",
-          inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
-          outputs->num_outputs - outputs->num_closed, outputs->num_busy);
+    DEBUG(
+        "%d open inputs, %d buffered inputs, %d open outputs, %d busy "
+        "outputs",
+        inputs->num_inputs - inputs->num_closed, inputs->num_buffered,
+        outputs->num_outputs - outputs->num_closed, outputs->num_busy);
   // TODO select/poll/epoll/kqueue on them
   static struct pollfd *fds = NULL;
   static int num_inputs_outputs = 0;
@@ -162,8 +156,7 @@ static inline int records_are_flowing_between(Inputs *inputs,
   int num_fds_to_poll =
       num_inputs_outputs - inputs->num_closed - outputs->num_closed;
   int num_inputs_to_poll = inputs->num_inputs - inputs->num_closed;
-  if (num_fds_to_poll == 0)
-    return 0;
+  if (num_fds_to_poll == 0) return 0;
   int num_inputs_to_actually_poll = 0;
   int num_outputs_to_actually_poll = 0;
   for (int i = 0; i < num_fds_to_poll; ++i) {
@@ -178,16 +171,14 @@ static inline int records_are_flowing_between(Inputs *inputs,
       // XXX or should we simply poll only inputs with empty buffers to
       // avoid excessive reads?
       // p->events = !input->is_buffered ? POLLIN : 0;
-      if (p->events != 0)
-        ++num_inputs_to_actually_poll;
+      if (p->events != 0) ++num_inputs_to_actually_poll;
     } else {
       Output *output = &outputs->outputs[i - num_inputs_to_poll];
       p->fd = output->fd;
       // poll only busy outputs, and regard all idle ones as writable
       // (below)
       p->events = output->is_busy ? POLLOUT : 0;
-      if (p->events != 0)
-        ++num_outputs_to_actually_poll;
+      if (p->events != 0) ++num_outputs_to_actually_poll;
     }
   }
   // throttle down if all outputs are busy
@@ -231,13 +222,11 @@ static inline int records_are_flowing_between(Inputs *inputs,
     for (int i = 0; i < num_fds_to_poll; ++i) {
       if (i < num_inputs_to_poll) {
         Input *input = &inputs->inputs[i];
-        if ((input->is_readable = 1))
-          ++inputs->num_readable;
+        if ((input->is_readable = 1)) ++inputs->num_readable;
         input->is_near_eof = 0;
       } else {
         Output *output = &outputs->outputs[i - num_inputs_to_poll];
-        if ((output->is_writable = 1))
-          ++outputs->num_writable;
+        if ((output->is_writable = 1)) ++outputs->num_writable;
       }
     }
     return 1;
@@ -250,14 +239,11 @@ static inline int read_from_available(Inputs *inputs) {
     for (int i = 0; i < inputs->num_inputs; ++i) {
       Input *input = &inputs->inputs[i];
       // skip inputs that are closed or don't have data ready
-      if (input->is_closed)
-        continue;
-      if (!input->is_readable)
-        continue;
+      if (input->is_closed) continue;
+      if (!input->is_readable) continue;
       Buffer *buf = input->buffer;
       // skip inputs whose buffer is full
-      if (buf->size == buf->capacity)
-        continue;
+      if (buf->size == buf->capacity) continue;
       int scan_end_of_record_down_to = buf->end_of_last_record + 1;
       // XXX optionally reading twice to detect the EOF earlier
       for (int num_reads = input->is_near_eof ? 2 : 1; num_reads > 0;
@@ -334,11 +320,9 @@ static inline int write_to_available(Outputs *outputs) {
     for (int i = 0; i < outputs->num_outputs; ++i) {
       Output *output = &outputs->outputs[i];
       // skip outputs that aren't busy, i.e., have empty buffers
-      if (!output->is_busy)
-        continue;
+      if (!output->is_busy) continue;
       // skip outputs that aren't writable yet
-      if (!output->is_writable)
-        continue;
+      if (!output->is_writable) continue;
       Buffer *buf = output->buffer;
       // write bufferred data to the output
       int num_bytes_writable = buf->size;
@@ -396,22 +380,19 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     }
     // find an input whose buffer contains records
     Input *input = &inputs->inputs[i];
-    if (!input->is_buffered)
-      continue;
+    if (!input->is_buffered) continue;
     // find an output that isn't busy, i.e., whose buffer is free
     Output *output = NULL;
     for (int j = 0; j < outputs->num_outputs; ++j) {
       Output *o = &outputs->outputs[outputs->next_output];
       ++outputs->next_output;
       outputs->next_output %= outputs->num_outputs;
-      if (o->is_busy)
-        continue;
+      if (o->is_busy) continue;
       output = o;
       break;
     }
     // stop if no idle output can be found
-    if (output == NULL)
-      continue;
+    if (output == NULL) continue;
     DEBUG("routing %d bytes: %s > %s",
           input->buffer->end_of_last_record + 1 - input->buffer->begin,
           input->name, output->name);

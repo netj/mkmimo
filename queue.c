@@ -35,7 +35,6 @@ void *dequeue(Queue *q) {
 }
 
 bool is_empty(Queue *q) {
-  if (q->first == NULL)
-    return true;
+  if (q->first == NULL) return true;
   return false;
 }
