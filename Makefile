@@ -1,26 +1,52 @@
 # Makefile for mkmimo
 
-CFLAGS += -Wall -Werror --std=c9x
+# no warnings allowed
+CFLAGS += -Wall -Werror
+# uses C99 (See: https://en.wikipedia.org/wiki/C99)
+CFLAGS += --std=c9x
 ifdef DEBUG
+    # turn on debug flags
     CFLAGS += -g -DDEBUG
 else
+    # optimize!
     CFLAGS += -O2
 endif
+# MKMIMO_IMPL=multithreaded needs pthread
 LDLIBS += -lpthread
 
-mkmimo: main.o buffer.o mkmimo_nonblocking.o mkmimo_multithreaded.o queue.o
+# headers, sources
+PRGM = mkmimo
+SRCS += buffer.c
+SRCS += mkmimo_nonblocking.c
+SRCS += queue.c
+SRCS += mkmimo_multithreaded.c
+SRCS += main.c
+HDRS += *.h
+
+# generated files
+OBJS = $(SRCS:.c=.o)
+DEPS = $(SRCS:=.c=.d)
+
+# how to link the program
+$(PRGM): $(OBJS)
 	$(CC) -o $@ $(LDFLAGS) $^ $(LDLIBS)
 
-PATH := $(shell pwd):$(PATH)
-export PATH
-
-include test/bats.mk
-test-build: mkmimo
+# compiler generated dependency
+# See: http://stackoverflow.com/a/16969086
+-include $(DEPS)
+CFLAGS += -MMD
 
 clean:
-	rm -f mkmimo *.o
+	rm -f $(PRGM) $(OBJS) $(DEPS)
 .PHONY: clean
 
+# test with BATS
+PATH := $(shell pwd):$(PATH)
+export PATH
+include test/bats.mk
+test-build: $(PRGM)
+
+# auto code formatting
 .PHONY: format
 ifndef CLANG_FORMAT
 ifneq ($(shell type clang-format-3.7 2>/dev/null),)
@@ -30,4 +56,4 @@ CLANG_FORMAT = clang-format
 endif
 endif
 format:
-	$(CLANG_FORMAT) -i *.[ch]
+	$(CLANG_FORMAT) -i $(HDRS) $(SRCS)
