@@ -20,15 +20,18 @@ static Queue *empty_buffers;
 static bool data_is_flowing_in = true;
 static bool data_should_flow_in = true;
 static bool data_should_flow_out = true;
+static bool something_went_wrong = false;
 
 /**
-  * Stop all threads
+  * Stop all threads upon error.
   */
-static inline void teardown_all_threads(void) {
+static inline void teardown_all_threads_due_to_error(void) {
   // XXX this tears down all input threads
   data_should_flow_in = false;
   // XXX this tears down all output threads
   data_should_flow_out = false;
+  // escalate error to exit status
+  something_went_wrong = true;
 }
 
 /**
@@ -79,11 +82,11 @@ static void *read_buffers_from_input(void *arg) {
 
       if (num_bytes_read < 0) {
         // Close input upon errors
-        perrorf("read %s", input->name);
+        perrorf("read %s returned %d", input->name, num_bytes_read);
         DEBUG("%s: input closed due to error", input->name);
         close(input->fd);
         input->is_closed = 1;
-        teardown_all_threads();
+        teardown_all_threads_due_to_error();
         break;
 
       } else if (num_bytes_read == 0) {
@@ -183,7 +186,7 @@ static void *write_buffers_to_output(void *arg) {
         DEBUG("%s: output closed due to error", output->name);
         close(output->fd);
         output->is_closed = 1;
-        teardown_all_threads();
+        teardown_all_threads_due_to_error();
         break;
       }
 
@@ -306,5 +309,6 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   }
   CHECK_ERRNO(pthread_cancel, flush_thread);
 
-  return 0;
+  // Exit with non-zero status if something goes wrong
+  return something_went_wrong ? 1 : 0;
 }
