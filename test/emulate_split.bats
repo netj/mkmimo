@@ -12,7 +12,6 @@ load test_helpers
     seq $numlines | mkmimo out.*
 
     # verify output
-    echo 'hiiiii'
     cmp -b <(seq $numlines) <(sort -n out.*)
 }
 

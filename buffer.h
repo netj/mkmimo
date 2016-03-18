@@ -17,6 +17,7 @@ typedef struct input_buffer {
 } Buffer;
 
 Buffer *new_buffer();
+void clear_buffer(Buffer *buf);
 void enlarge_buffer(Buffer *buf, size_t new_capacity);
 
 #endif /* BUFFER_H */

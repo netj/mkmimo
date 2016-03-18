@@ -14,6 +14,7 @@
 #include <errno.h>
 #include "buffer.h"
 
+// a shorthand for debug messages
 #ifdef DEBUG
 #undef DEBUG
 #define DEBUG(fmt, args...) fprintf(stderr, "[%d] " fmt "\n", getpid(), args)
@@ -21,7 +22,22 @@
 #define DEBUG(fmt, args...)
 #endif
 
+// a shorthand for printing error messages
 #define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
+
+// a shorthand for checking error return values from system and library calls
+#ifdef ABORT_UNLESS
+#undef ABORT_UNLESS
+#endif
+#define ABORT_UNLESS(fn, args...) \
+  {                               \
+    int retval = fn(args);        \
+    if (retval < 0) {             \
+      perrorf("%s", #fn);         \
+      abort();                    \
+    };                            \
+    retval;                       \
+  }
 
 typedef struct input {
   int fd;

@@ -15,7 +15,7 @@ struct Node {
 };
 
 struct Queue {
-  Node *first, *last;
+  Node *first, *last, *free;
   pthread_mutex_t lock;
   pthread_cond_t is_non_empty;
 };

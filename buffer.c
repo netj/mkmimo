@@ -18,6 +18,11 @@ Buffer *new_buffer() {
   return buf;
 }
 
+void clear_buffer(Buffer *buf) {
+  buf->begin = buf->size = 0;
+  buf->end_of_last_record = -1;
+}
+
 void enlarge_buffer(Buffer *buf, size_t new_capacity) {
   void *buf_larger = realloc(buf->data, new_capacity);
   if (buf_larger != NULL) {

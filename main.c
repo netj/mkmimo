@@ -135,8 +135,8 @@ static inline void parse_environ(void) {
   // determine which implementation to use
   char *impl = getenv("MKMIMO_IMPL");
   if (impl == NULL) {
-    // use nonblocking implementation by default
-    mkmimo = mkmimo_nonblocking;
+    // use multithreaded implementation by default
+    mkmimo = mkmimo_multithreaded;
   } else if (!strcmp(impl, "nonblocking")) {
     mkmimo = mkmimo_nonblocking;
   } else if (!strcmp(impl, "multithreaded")) {

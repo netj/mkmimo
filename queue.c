@@ -4,12 +4,20 @@ Queue *new_queue() {
   Queue *q = (Queue *)malloc(sizeof(Queue));
   q->first = NULL;
   q->last = NULL;
+  q->free = NULL;
   return q;
 }
 
 void queue(Queue *q, void *elem) {
-  // Create a new queue node
-  Node *new_node = (Node *)malloc(sizeof(Node));
+  // Take a node from the free list
+  Node *new_node = q->free;
+  if (new_node == NULL) {
+    // Create a new node if none were free
+    new_node = (Node *)malloc(sizeof(Node));
+  } else {
+    // Update the free list
+    q->free = new_node->next;
+  }
   new_node->elem = elem;
   new_node->next = NULL;
 
@@ -26,11 +34,12 @@ void queue(Queue *q, void *elem) {
 Node *peek(Queue *q) { return q->first; }
 
 void *dequeue(Queue *q) {
-  int *elem = q->first->elem;
-  Node *next = q->first->next;
-  free(q->first);
-
-  q->first = next;
+  Node *node = q->first;
+  q->first = node->next;
+  int *elem = node->elem;
+  // Put the node to the free list
+  node->next = q->free;
+  q->free = node;
   return elem;
 }
 
