@@ -1,10 +1,13 @@
 #include "queue.h"
+#include "mkmimo.h"
 
 Queue *new_queue() {
   Queue *q = (Queue *)malloc(sizeof(Queue));
   q->first = NULL;
   q->last = NULL;
   q->free = NULL;
+  CHECK_ERRNO(pthread_mutex_init, &(q->lock), NULL);
+  CHECK_ERRNO(pthread_cond_init, &(q->is_non_empty), NULL);
   return q;
 }
 
@@ -52,6 +55,7 @@ void queue_and_signal(Queue *q, void *elem) {
   pthread_mutex_lock(&(q->lock));
   queue(q, elem);
   pthread_cond_signal(&(q->is_non_empty));
+  pthread_mutex_unlock(&(q->lock));
 }
 
 void *dequeue_or_wait(Queue *q) {

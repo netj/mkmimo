@@ -26,18 +26,17 @@
 #define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
 
 // a shorthand for checking error return values from system and library calls
-#ifdef ABORT_UNLESS
-#undef ABORT_UNLESS
-#endif
-#define ABORT_UNLESS(fn, args...) \
-  {                               \
-    int retval = fn(args);        \
-    if (retval < 0) {             \
-      perrorf("%s", #fn);         \
-      abort();                    \
-    };                            \
-    retval;                       \
+#define CHECKED_ERRNO(fn, args...) \
+  {                                \
+    int retval = fn(args);         \
+    if (retval < 0) {              \
+      perrorf("%s", #fn);          \
+      fflush(stderr);              \
+      abort();                     \
+    };                             \
+    retval;                        \
   }
+#define CHECK_ERRNO(fn, args...) (void)(CHECKED_ERRNO(fn, args))
 
 typedef struct input {
   int fd;

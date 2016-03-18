@@ -43,16 +43,30 @@ static inline void find_record_separator(Buffer *buf,
  * Move all bytes after the last record separator in the current buffer
  * to the overflow buffer.
  */
-static inline void move_extra_bytes(Buffer *buf, Buffer *overflow) {
-  int start = buf->end_of_last_record + 1;
-  int num_extra_bytes = buf->size - start;
-  while (num_extra_bytes > overflow->size) {
-    enlarge_buffer(overflow, overflow->capacity * 2);
+static inline void move_extra_bytes(Buffer *src, Buffer *tgt) {
+  int trailing_bytes_begin = src->end_of_last_record + 1;
+  int num_trailing_bytes_to_copy =
+      src->size - (trailing_bytes_begin - src->begin);
+  if (num_trailing_bytes_to_copy > 0) {
+    // ensure capacity
+    DEBUG(" trailing data found in buffer %p (%d bytes, from %d)", src,
+          num_trailing_bytes_to_copy, trailing_bytes_begin);
+    int capacity = tgt->capacity;
+    while (capacity - tgt->size < num_trailing_bytes_to_copy) {
+      capacity *= 2;
+    }
+    if (capacity > tgt->capacity) {
+      DEBUG(" enlarging capacity of buffer %p to %d bytes from %d bytes", tgt,
+            capacity, tgt->capacity);
+      enlarge_buffer(tgt, capacity);
+    }
+    // copy data
+    DEBUG(" copying trailing data to buffer %p from %p", tgt, src);
+    memcpy(tgt->data + tgt->begin, src->data + trailing_bytes_begin,
+           num_trailing_bytes_to_copy);
+    tgt->size += num_trailing_bytes_to_copy;
+    src->size -= num_trailing_bytes_to_copy;
   }
-
-  memcpy(overflow, (buf->data + start), num_extra_bytes);
-  buf->size -= num_extra_bytes;
-  overflow->size = num_extra_bytes;
 }
 
 /**
@@ -69,7 +83,7 @@ static inline Buffer *grab_empty_buffer(void) {
  * the empty buffers queue, fills it, and adds it to the full buffers
  * queue for processing by the output threads.
  */
-static inline void *input_thread(void *arg) {
+static void *read_buffers_from_input(void *arg) {
   Input *input = arg;
 
   input->buffer = grab_empty_buffer();
@@ -126,29 +140,40 @@ static inline void *input_thread(void *arg) {
         scan_end_of_record_down_to = buf->begin + buf->size;
       }
     }
-    DEBUG("%s: filled buffer %p", input->name, input->buffer);
+    DEBUG("%s: filled buffer %p, holding %d bytes", input->name, input->buffer,
+          input->buffer->size);
 
     if (input->is_closed) {
       // Once input is closed, submit the last filled buffer to output threads,
       // and exit the loop since no more can be read
+      DEBUG("%s: submitting the last filled buffer %p", input->name,
+            input->buffer);
       queue_and_signal(full_buffers, input->buffer);
       break;
     } else if (input->buffer->size > 0) {
       // Otherwise, keep only complete records in the buffer and move the
       // trailing bytes to a new empty buffer
+      DEBUG("%s: grabbing next empty buffer", input->name);
       Buffer *overflow = grab_empty_buffer();
       DEBUG("%s: grabbed an empty buffer %p", input->name, overflow);
-      move_extra_bytes(input->buffer, overflow);
       // Submit the trimmed buffer and continue the same steps with the new
       // buffer
+      DEBUG("%s: submitting after trimming the filled buffer %p", input->name,
+            input->buffer);
+      move_extra_bytes(input->buffer, overflow);
       queue_and_signal(full_buffers, input->buffer);
       input->buffer = overflow;
     } else {
-      // XXX This should never happen, but if it does, try to fill the buffer
-      // again
+      // XXX This should never happen, but it's harmless try to fill the buffer
+      // again if it ever does
+      DEBUG(
+          "%s: XXX THIS SHOULD NEVER HAPPEN! but harmless to try filling the "
+          "same buffer again",
+          input->name);
     }
   }
 
+  DEBUG("%s: stops input thread", input->name);
   return NULL;
 }
 
@@ -158,11 +183,12 @@ static inline void *input_thread(void *arg) {
  * writes it, and adds the
  * buffer back into the empty buffer queue.
  */
-static inline void *output_thread(void *arg) {
+static void *write_buffers_to_output(void *arg) {
   Output *output = arg;
 
   while (data_should_flow_out) {
     // Grab a filled buffer
+    DEBUG("%s: waiting for a filled buffer", output->name);
     Buffer *buf = output->buffer = dequeue_or_wait(full_buffers);
     DEBUG("%s: got a filled buffer %p, holding %d bytes", output->name, buf,
           buf->size);
@@ -192,23 +218,49 @@ static inline void *output_thread(void *arg) {
       // Return the buffer back to the pool and continue with the next available
       // buffer
       queue_and_signal(empty_buffers, buf);
-      DEBUG("%s: returned the buffer %p", output->name, buf);
+      DEBUG("%s: recycling the buffer %p", output->name, buf);
     } else {
       // Otherwise, the output was closed before everything in the buffer was
-      // written,
-      // so send the buffer back to filled pool, so someone else can handle it
+      // written, so send the buffer back to filled pool, so someone else can
+      // handle it
+      DEBUG("%s: resubmitting the buffer %p since output closed prematurely",
+            output->name, buf);
       queue_and_signal(full_buffers, buf);
       // XXX This can inevitably create duplicate records
       // TODO Allow user to choose whether to drop or retransmit such records
     }
 
     // Stop once the output is closed
-    if (output->is_closed) break;
+    if (output->is_closed) {
+      DEBUG("%s: output is now closed", output->name);
+      break;
+    }
 
     // Also stop if no data is flowing in and remains in the pool
-    if (!data_is_flowing_in && is_empty(full_buffers)) break;
+    if (!data_is_flowing_in && is_empty(full_buffers)) {
+      DEBUG("%s: anticipates no more buffers to arrive", output->name);
+      data_should_flow_out = 0;
+      break;
+    }
   }
 
+  DEBUG("%s: stops output thread", output->name);
+  return NULL;
+}
+
+/**
+  * Function executed as a thread once all input threads are finished to wake
+  * pending output threads to flush all the buffered data.
+  */
+static void *flush_remaining_data(void *arg) {
+  Outputs *outputs = arg;
+  int num_flushes = 2 * outputs->num_outputs;
+  for (int i = 0; i < num_flushes; ++i) {
+    Buffer *empty = grab_empty_buffer();
+    DEBUG("Submitting an empty buffer to wake an output thread (%d remaining)",
+          num_flushes - 1 - i);
+    queue_and_signal(full_buffers, empty);
+  }
   return NULL;
 }
 
@@ -230,33 +282,41 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   data_is_flowing_in = 1;
 
   // Spawn a thread for every input and output
-  pthread_t input_threads[inputs->num_inputs];
   pthread_t output_threads[outputs->num_outputs];
-  for (int i = 0; i < inputs->num_inputs; i++) {
-    Input *input = &(inputs->inputs[i]);
-    DEBUG("Spawning input thread for %s", input->name);
-    ABORT_UNLESS(pthread_create, &input_threads[i], NULL, input_thread, input);
-  }
   for (int i = 0; i < outputs->num_outputs; i++) {
     Output *output = &(outputs->outputs[i]);
     DEBUG("Spawning output thread for %s", output->name);
-    ABORT_UNLESS(pthread_create, &output_threads[i], NULL, output_thread,
-                 output);
+    CHECK_ERRNO(pthread_create, &output_threads[i], NULL,
+                write_buffers_to_output, output);
+  }
+  pthread_t input_threads[inputs->num_inputs];
+  for (int i = 0; i < inputs->num_inputs; i++) {
+    Input *input = &(inputs->inputs[i]);
+    DEBUG("Spawning input thread for %s", input->name);
+    CHECK_ERRNO(pthread_create, &input_threads[i], NULL,
+                read_buffers_from_input, input);
   }
 
   // Wait for all input threads to read all data
   for (int i = 0; i < inputs->num_inputs; i++) {
-    ABORT_UNLESS(pthread_join, input_threads[i], NULL);
+    DEBUG("Waiting for %s and %d more input threads to finish",
+          inputs->inputs[i].name, inputs->num_inputs - 1 - i);
+    CHECK_ERRNO(pthread_join, input_threads[i], NULL);
   }
+  DEBUG("%s", "All input threads finished");
   // Let output threads know no more data is coming in
   data_is_flowing_in = 0;
+  // Spawn a thread for waking up all pending output threads
+  pthread_t flush_thread;
+  CHECK_ERRNO(pthread_create, &flush_thread, NULL, flush_remaining_data,
+              outputs);
   // Wait for all output threads to finish writing the buffers
-  Buffer *empty = new_buffer();
   for (int i = 0; i < outputs->num_outputs; i++) {
-    // This is necessary to wake output thread waiting for a buffer
-    queue_and_signal(full_buffers, empty);
-    ABORT_UNLESS(pthread_join, output_threads[i], NULL);
+    DEBUG("Waiting for %s and %d more output threads to finish",
+          outputs->outputs[i].name, outputs->num_outputs - 1 - i);
+    CHECK_ERRNO(pthread_join, output_threads[i], NULL);
   }
+  CHECK_ERRNO(pthread_cancel, flush_thread);
 
   return 0;
 }
