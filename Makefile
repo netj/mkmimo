@@ -1,6 +1,6 @@
 # Makefile for mkmimo
 
-CFLAGS += -Wall --std=c9x
+CFLAGS += -Wall -Werror --std=c9x
 ifdef DEBUG
     CFLAGS += -g -DDEBUG
 else
