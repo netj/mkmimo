@@ -3,7 +3,7 @@ load test_helpers
 
 @test "split emulation (1 input, 10 output)" {
     numouts=10
-    numlines=1000
+    numlines=1000000
 
     # create output files
     seq $numouts | split -n r/$numouts - out.
