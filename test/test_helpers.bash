@@ -25,3 +25,11 @@ sum_dd_bytes() {
         echo 0
     } | bc
 }
+
+allow_DEBUG_build_to_skip() {
+    if printenv DEBUG &>/dev/null; then
+        skip "DEBUG build"
+    else
+        false
+    fi
+}

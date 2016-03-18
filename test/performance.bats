@@ -21,5 +21,5 @@ load test_helpers
     # or no slower than cat's performance by 20%
     [ $(bc <<<"$numlines_by_cat < 1.2 * $numlines_by_mkmimo") = 1 ] ||
     # or this was a DEBUG build
-    printenv DEBUG &>/dev/null && skip "DEBUG build"
+    allow_DEBUG_build_to_skip
 }
