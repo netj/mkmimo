@@ -23,7 +23,12 @@
 #endif
 
 // a shorthand for printing error messages
-#define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
+#define perrorf(fmt, args...)                        \
+  do {                                               \
+    char strerrbuf[BUFSIZ];                          \
+    strerror_r(errno, strerrbuf, sizeof(strerrbuf)); \
+    fprintf(stderr, fmt ": %s", args, strerrbuf);    \
+  } while (0)
 
 // a shorthand for checking error return values from system and library calls
 #define CHECKED_ERRNO(fn, args...) \
