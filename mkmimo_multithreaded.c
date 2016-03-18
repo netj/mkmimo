@@ -1,9 +1,6 @@
-#include <pthread.h>
-#include <semaphore.h>
 #include "mkmimo_multithreaded.h"
-#include "mkmimo.h"
 #include "queue.h"
-#include "buffer.h"
+#include <pthread.h>
 
 // Buffer pools
 Queue *full_buffers;

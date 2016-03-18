@@ -1,9 +1,7 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <sys/types.h>
 
 #define DEFAULT_BLOCKSIZE (4 * BUFSIZ)  // 4096
 extern int BLOCKSIZE;

@@ -1,18 +1,18 @@
+#include "mkmimo.h"
+#include "mkmimo_multithreaded.h"
+#include "mkmimo_nonblocking.h"
+#include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/uio.h>
-#include <unistd.h>
-#include <poll.h>
 #include <time.h>
-#include <errno.h>
-#include <stdbool.h>
-#include "mkmimo.h"
-#include "mkmimo_nonblocking.h"
-#include "mkmimo_multithreaded.h"
+#include <unistd.h>
 
 // Function pointer to the mkmimo implementation to use
 static int (*mkmimo)(Inputs *, Outputs *) = NULL;

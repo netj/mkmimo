@@ -1,4 +1,6 @@
 #include "buffer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 Buffer *new_buffer() {
   Buffer *buf = malloc(sizeof(Buffer));
