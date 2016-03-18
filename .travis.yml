@@ -4,6 +4,13 @@ compiler:
   - clang
   - gcc
 
+env:
+  global:
+    - BLOCKSIZE=4096
+  matrix:
+    - MKMIMO_IMPL=multithreaded
+    - MKMIMO_IMPL=nonblocking THROTTLE_SLEEP_MSEC=0 POLL_TIMEOUT_MSEC=
+
 addons:
   apt:
     sources:
