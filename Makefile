@@ -21,7 +21,7 @@ SRCS += mkmimo_nonblocking.c
 SRCS += queue.c
 SRCS += mkmimo_multithreaded.c
 SRCS += main.c
-HDRS += *.h
+HDRS += $(wildcard *.h)
 
 # generated files
 OBJS = $(SRCS:.c=.o)
