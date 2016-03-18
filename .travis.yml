@@ -38,7 +38,8 @@ before_install:
   - sudo apt-add-repository -y "ppa:ubuntu-toolchain-r/test"
   - sudo apt-get update -yq
   # required packages
-  - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7 gcc-5
+  - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7
+  - case $CC in gcc) sudo apt-get install -yq gcc-5 ;; esac
   # code should be already formatted
   - make format CLANG_FORMAT=clang-format-3.7
   - test $(git status --porcelain | wc -l) -eq 0 || { git diff; false; }
