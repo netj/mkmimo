@@ -27,9 +27,13 @@ HDRS += $(wildcard *.h)
 OBJS = $(SRCS:.c=.o)
 DEPS = $(SRCS:=.c=.d)
 
+ifeq ($(MKMIMO_IMPL),bash)
+$(PRGM): $(PRGM).sh
+else
 # how to link the program
 $(PRGM): $(OBJS)
 	$(CC) -o $@ $(LDFLAGS) $^ $(LDLIBS)
+endif
 
 # compiler generated dependency
 # See: http://stackoverflow.com/a/16969086

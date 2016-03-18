@@ -148,3 +148,10 @@ To specify which `clang-format` to use:
 ```bash
 make format CLANG_FORMAT=clang-format-3.7
 ```
+
+### Building Alternative Implementation
+
+To build the bash proof-of-concept version, try:
+```bash
+make MKMIMO_IMPL=bash mkmimo
+```
