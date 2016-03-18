@@ -244,7 +244,7 @@ static void *flush_remaining_data(void *arg) {
   * Parse runtime parameters from environment variables
   */
 static inline void parse_environ(void) {
-  // get tuned multiple buffering factor
+  // allow multiple buffering factor to be tuned
   readIntFromEnv(MULTIBUFFERING, MULTIBUFFERING, MULTIBUFFERING > 0,
                  DEFAULT_MULTIBUFFERING);
 }
@@ -258,7 +258,7 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   full_buffers = new_queue();
   empty_buffers = new_queue();
 
-  // Initialize 2I + O empty buffers and add them to the empty queue.
+  // Initialize the empty pool with k * (I + O) buffers
   int num_buffers =
       MULTIBUFFERING * (inputs->num_inputs + outputs->num_outputs);
   DEBUG("Creating %d empty buffers", num_buffers);
