@@ -402,25 +402,7 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     input->buffer->end_of_last_record = -1;
 
     // Make sure the trailing bytes at the end of input's buffer isn't lost
-    int trailing_bytes_begin =
-        buf->end_of_last_record + 1 /* length of the record separator */;
-    int num_trailing_bytes_to_copy =
-        buf->size - (trailing_bytes_begin - buf->begin);
-    if (num_trailing_bytes_to_copy > 0) {
-      DEBUG("trailing_bytes_begin=%d, num_trailing_bytes_to_copy=%d",
-            trailing_bytes_begin, num_trailing_bytes_to_copy);
-      if (input->buffer->capacity < buf->capacity) {
-        DEBUG("enlarging buffer size of %p to %d bytes from %d bytes",
-              input->buffer->data, input->buffer->capacity, buf->capacity);
-        enlarge_buffer(input->buffer, buf->capacity);
-      }
-      DEBUG("copying to %p from %p", input->buffer->data, buf->data);
-      memcpy(input->buffer->data + input->buffer->begin,
-             buf->data + trailing_bytes_begin, num_trailing_bytes_to_copy);
-      input->buffer->size = num_trailing_bytes_to_copy;
-      // Truncate size, so the trailing bytes are ignored when output
-      buf->size -= num_trailing_bytes_to_copy;
-    }
+    move_trailing_data_after_last_record(input->buffer, output->buffer);
     // now, mark the input as holding an incomplete buffer
     SET(input, buffered, 0);
     // and mark the output as busy

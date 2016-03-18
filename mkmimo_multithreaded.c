@@ -37,36 +37,6 @@ static inline void find_record_separator(Buffer *buf,
 }
 
 /**
- * Move all bytes after the last record separator in the current buffer
- * to the overflow buffer.
- */
-static inline void move_extra_bytes(Buffer *src, Buffer *tgt) {
-  int trailing_bytes_begin = src->end_of_last_record + 1;
-  int num_trailing_bytes_to_copy =
-      src->size - (trailing_bytes_begin - src->begin);
-  if (num_trailing_bytes_to_copy > 0) {
-    // ensure capacity
-    DEBUG(" trailing data found in buffer %p (%d bytes, from %d)", src,
-          num_trailing_bytes_to_copy, trailing_bytes_begin);
-    int capacity = tgt->capacity;
-    while (capacity - tgt->size < num_trailing_bytes_to_copy) {
-      capacity *= 2;
-    }
-    if (capacity > tgt->capacity) {
-      DEBUG(" enlarging capacity of buffer %p to %d bytes from %d bytes", tgt,
-            capacity, tgt->capacity);
-      enlarge_buffer(tgt, capacity);
-    }
-    // copy data
-    DEBUG(" copying trailing data to buffer %p from %p", tgt, src);
-    memcpy(tgt->data + tgt->begin, src->data + trailing_bytes_begin,
-           num_trailing_bytes_to_copy);
-    tgt->size += num_trailing_bytes_to_copy;
-    src->size -= num_trailing_bytes_to_copy;
-  }
-}
-
-/**
   * Grab a buffer from the empty pool and clear it for fresh data.
   */
 static inline Buffer *grab_empty_buffer(void) {
@@ -157,7 +127,7 @@ static void *read_buffers_from_input(void *arg) {
       // buffer
       DEBUG("%s: submitting after trimming the filled buffer %p", input->name,
             input->buffer);
-      move_extra_bytes(input->buffer, overflow);
+      move_trailing_data_after_last_record(overflow, input->buffer);
       queue_and_signal(full_buffers, input->buffer);
       input->buffer = overflow;
     } else {
