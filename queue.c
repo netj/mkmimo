@@ -8,10 +8,14 @@ Queue *new_queue() {
   q->first = NULL;
   q->last = NULL;
   q->free = NULL;
-  CHECK_ERRNO(pthread_mutex_init, &(q->lock), NULL);
+  CHECK_ERRNO(pthread_mutexattr_init,&(q->mutex_attr));
+  CHECK_ERRNO(pthread_mutexattr_settype,&(q->mutex_attr), PTHREAD_MUTEX_ERRORCHECK);
+  CHECK_ERRNO(pthread_mutex_init, &(q->lock), &(q->mutex_attr));
   CHECK_ERRNO(pthread_cond_init, &(q->is_non_empty), NULL);
   return q;
 }
+
+// TODO destructor
 
 void queue(Queue *q, void *elem) {
   // Take a node from the free list
@@ -54,18 +58,18 @@ bool is_empty(Queue *q) {
 }
 
 void queue_and_signal(Queue *q, void *elem) {
-  pthread_mutex_lock(&(q->lock));
+  CHECK_ERRNO(pthread_mutex_lock, &(q->lock));
   queue(q, elem);
-  pthread_cond_signal(&(q->is_non_empty));
-  pthread_mutex_unlock(&(q->lock));
+  CHECK_ERRNO(pthread_cond_signal,&(q->is_non_empty));
+  CHECK_ERRNO(pthread_mutex_unlock, &(q->lock));
 }
 
 void *dequeue_or_wait(Queue *q) {
-  pthread_mutex_lock(&(q->lock));
+  CHECK_ERRNO(pthread_mutex_lock, &(q->lock));
   while (is_empty(q)) {
-    pthread_cond_wait(&(q->is_non_empty), &(q->lock));
+    CHECK_ERRNO(pthread_cond_wait, &(q->is_non_empty), &(q->lock));
   }
   void *elem = dequeue(q);
-  pthread_mutex_unlock(&(q->lock));
+  CHECK_ERRNO(pthread_mutex_unlock, &(q->lock));
   return elem;
 }
