@@ -7,18 +7,18 @@ Queue *full_buffers;
 Queue *empty_buffers;
 
 // Flags
-int data_is_flowing_in = 1;
-int data_should_flow_in = 1;
-int data_should_flow_out = 1;
+bool data_is_flowing_in = true;
+bool data_should_flow_in = true;
+bool data_should_flow_out = true;
 
 /**
   * Stop all threads
   */
 static inline void teardown_all_threads(void) {
   // XXX this tears down all input threads
-  data_should_flow_in = 0;
+  data_should_flow_in = false;
   // XXX this tears down all output threads
-  data_should_flow_out = 0;
+  data_should_flow_out = false;
 }
 
 /**
@@ -236,7 +236,7 @@ static void *write_buffers_to_output(void *arg) {
     // Also stop if no data is flowing in and remains in the pool
     if (!data_is_flowing_in && is_empty(full_buffers)) {
       DEBUG("%s: anticipates no more buffers to arrive", output->name);
-      data_should_flow_out = 0;
+      data_should_flow_out = false;
       break;
     }
   }
@@ -302,7 +302,7 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   }
   DEBUG("%s", "All input threads finished");
   // Let output threads know no more data is coming in
-  data_is_flowing_in = 0;
+  data_is_flowing_in = false;
   // Spawn a thread for waking up all pending output threads
   pthread_t flush_thread;
   CHECK_ERRNO(pthread_create, &flush_thread, NULL, flush_remaining_data,
