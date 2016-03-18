@@ -19,5 +19,7 @@ load test_helpers
     # mkmimo should be faster
     [ $numlines_by_mkmimo -gt $numlines_by_cat ] ||
     # or no slower than cat's performance by 20%
-    [ $(bc <<<"$numlines_by_cat < 1.2 * $numlines_by_mkmimo") = 1 ]
+    [ $(bc <<<"$numlines_by_cat < 1.2 * $numlines_by_mkmimo") = 1 ] ||
+    # or this was a DEBUG build
+    printenv DEBUG &>/dev/null && skip "DEBUG build"
 }
