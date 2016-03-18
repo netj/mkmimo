@@ -26,7 +26,7 @@ addons:
     - mawk
     - pv
     - clang-format-3.7
-    - gcc-5.3
+    - gcc-5
 
 # Using GCE as pv is not whitelisted
 sudo: required
@@ -38,13 +38,13 @@ before_install:
   - sudo apt-add-repository -y "ppa:ubuntu-toolchain-r/test"
   - sudo apt-get update -yq
   # required packages
-  - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7 gcc-5.3
+  - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7 gcc-5
   # code should be already formatted
   - make format CLANG_FORMAT=clang-format-3.7
   - test $(git status --porcelain | wc -l) -eq 0 || { git diff; false; }
 
 install:
-  - case $CC in gcc) CC=gcc-5.3 ;; esac
+  - case $CC in gcc) CC=gcc-5 ;; esac
   - make
 
 script:
