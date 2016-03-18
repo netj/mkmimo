@@ -2,14 +2,24 @@
 #include "queue.h"
 #include <pthread.h>
 
-// Buffer pools
-Queue *full_buffers;
-Queue *empty_buffers;
+/**
+ * Parameters
+ */
+#define DEFAULT_MULTIBUFFERING 2  // double buffering
+static int MULTIBUFFERING = DEFAULT_MULTIBUFFERING;
 
-// Flags
-bool data_is_flowing_in = true;
-bool data_should_flow_in = true;
-bool data_should_flow_out = true;
+/**
+  * Buffer pools
+  */
+static Queue *full_buffers;
+static Queue *empty_buffers;
+
+/**
+  * Flags
+  */
+static bool data_is_flowing_in = true;
+static bool data_should_flow_in = true;
+static bool data_should_flow_out = true;
 
 /**
   * Stop all threads
@@ -220,26 +230,37 @@ static void *write_buffers_to_output(void *arg) {
   * pending output threads to flush all the buffered data.
   */
 static void *flush_remaining_data(void *arg) {
-  Outputs *outputs = arg;
-  int num_flushes = 2 * outputs->num_outputs;
-  for (int i = 0; i < num_flushes; ++i) {
+  int num_buffers = *(int *)arg;
+  for (int i = 0; i < num_buffers; ++i) {
     Buffer *empty = grab_empty_buffer();
     DEBUG("Submitting an empty buffer to wake an output thread (%d remaining)",
-          num_flushes - 1 - i);
+          num_buffers - 1 - i);
     queue_and_signal(full_buffers, empty);
   }
   return NULL;
 }
 
 /**
+  * Parse runtime parameters from environment variables
+  */
+static inline void parse_environ(void) {
+  // get tuned multiple buffering factor
+  readIntFromEnv(MULTIBUFFERING, MULTIBUFFERING, MULTIBUFFERING > 0,
+                 DEFAULT_MULTIBUFFERING);
+}
+
+/**
   * Multi-threaded implementation of mkmimo
   */
 inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
+  parse_environ();
+
   full_buffers = new_queue();
   empty_buffers = new_queue();
 
   // Initialize 2I + O empty buffers and add them to the empty queue.
-  int num_buffers = (2 * inputs->num_inputs) + outputs->num_outputs;
+  int num_buffers =
+      MULTIBUFFERING * (inputs->num_inputs + outputs->num_outputs);
   DEBUG("Creating %d empty buffers", num_buffers);
   for (int i = 0; i < num_buffers; i++) {
     queue(empty_buffers, new_buffer());
@@ -276,7 +297,7 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   // Spawn a thread for waking up all pending output threads
   pthread_t flush_thread;
   CHECK_ERRNO(pthread_create, &flush_thread, NULL, flush_remaining_data,
-              outputs);
+              &num_buffers);
   // Wait for all output threads to finish writing the buffers
   for (int i = 0; i < outputs->num_outputs; i++) {
     DEBUG("Waiting for %s and %d more output threads to finish",
