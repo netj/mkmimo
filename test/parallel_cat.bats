@@ -3,7 +3,7 @@ load test_helpers
 
 @test "parallel cat (10 input, 1 output)" {
     numins=10
-    numlines=1000
+    numlines=1000000
     # create named pipes
     rm -f input.*
     seq $numins | split -n r/$numins - input.

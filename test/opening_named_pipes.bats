@@ -2,7 +2,7 @@
 load test_helpers
 
 @test "opening named pipe outputs before others" {
-    numins=9999
+    numins=99999
     rm -f i o
     mkfifo i o
     numouts=$(

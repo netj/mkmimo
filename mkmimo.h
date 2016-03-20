@@ -1,19 +1,18 @@
 #ifndef MKMIMO_H
 #define MKMIMO_H
 
+#define _POSIX_C_SOURCE 200809L
+
+#include "buffer.h"
+#include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/uio.h>
 #include <unistd.h>
-#include <poll.h>
-#include <time.h>
-#include <errno.h>
-#include "buffer.h"
 
+// a shorthand for debug messages
 #ifdef DEBUG
 #undef DEBUG
 #define DEBUG(fmt, args...) fprintf(stderr, "[%d] " fmt "\n", getpid(), args)
@@ -21,7 +20,26 @@
 #define DEBUG(fmt, args...)
 #endif
 
-#define perrorf(fmt, args...) fprintf(stderr, fmt ": %s", args, strerror(errno))
+// a shorthand for printing error messages
+#define perrorf(fmt, args...)                        \
+  do {                                               \
+    char strerrbuf[BUFSIZ];                          \
+    strerror_r(errno, strerrbuf, sizeof(strerrbuf)); \
+    fprintf(stderr, fmt ": %s", args, strerrbuf);    \
+  } while (0)
+
+// a shorthand for checking error return values from system and library calls
+#define CHECKED_ERRNO(fn, args...) \
+  {                                \
+    int retval = fn(args);         \
+    if (retval < 0) {              \
+      perrorf("%s", #fn);          \
+      fflush(stderr);              \
+      abort();                     \
+    };                             \
+    retval;                        \
+  }
+#define CHECK_ERRNO(fn, args...) (void)(CHECKED_ERRNO(fn, args))
 
 typedef struct input {
   int fd;

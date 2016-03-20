@@ -1,21 +1,9 @@
-#define _POSIX_C_SOURCE 200809L
-
-#ifdef __APPLE__
-#define POLLHUP_SUPPORT_UNRELIABLE
-#define _DARWIN_C_SOURCE
-#endif
-
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/uio.h>
-#include <unistd.h>
-#include <poll.h>
-#include <time.h>
-#include <errno.h>
-#include <signal.h>
 #include "mkmimo_nonblocking.h"
-#include "buffer.h"
+#include <poll.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <time.h>
 
 // when POLLHUP support is unreliable, use a timeout to detect input EOFs
 #ifdef POLLHUP_SUPPORT_UNRELIABLE
@@ -397,34 +385,19 @@ static inline int exchange_buffered_records(Inputs *inputs, Outputs *outputs) {
     DEBUG("routing %d bytes: %s > %s",
           input->buffer->end_of_last_record + 1 - input->buffer->begin,
           input->name, output->name);
-    // swap buffers between the buffered input and the idle output
+
+    // Swap buffers between the buffered input and the idle output
     Buffer *buf = input->buffer;
     input->buffer = output->buffer;
     output->buffer = buf;
-    // reset input buffer
+
+    // Reset input buffer
     input->buffer->size = 0;
     input->buffer->begin = 0;
     input->buffer->end_of_last_record = -1;
-    // make sure the trailing bytes at the end of input's buffer isn't lost
-    int trailing_bytes_begin =
-        buf->end_of_last_record + 1 /* length of the record separator */;
-    int num_trailing_bytes_to_copy =
-        buf->size - (trailing_bytes_begin - buf->begin);
-    if (num_trailing_bytes_to_copy > 0) {
-      DEBUG("trailing_bytes_begin=%d, num_trailing_bytes_to_copy=%d",
-            trailing_bytes_begin, num_trailing_bytes_to_copy);
-      if (input->buffer->capacity < buf->capacity) {
-        DEBUG("enlarging buffer size of %p to %d bytes from %d bytes",
-              input->buffer->data, input->buffer->capacity, buf->capacity);
-        enlarge_buffer(input->buffer, buf->capacity);
-      }
-      DEBUG("copying to %p from %p", input->buffer->data, buf->data);
-      memcpy(input->buffer->data + input->buffer->begin,
-             buf->data + trailing_bytes_begin, num_trailing_bytes_to_copy);
-      input->buffer->size = num_trailing_bytes_to_copy;
-      // truncate size, so the trailing bytes are ignored when output
-      buf->size -= num_trailing_bytes_to_copy;
-    }
+
+    // Make sure the trailing bytes at the end of input's buffer isn't lost
+    move_trailing_data_after_last_record(input->buffer, output->buffer);
     // now, mark the input as holding an incomplete buffer
     SET(input, buffered, 0);
     // and mark the output as busy

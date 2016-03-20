@@ -51,7 +51,7 @@ mkprocs -n $num_consumer_fast -I 'sink_fast_%s'   sh -c 'pv -N consumer_fast_$CU
 mkprocs -n $num_consumer_slow -I 'sink_slow_%s'   sh -c 'pv -N consumer_slow_$CURRENT_PROCESS_INDEX'" ${mute_consumer_pv:--c} ${consumer_slow_throughput:+-L $consumer_slow_throughput} | dd bs=$consumer_blocksize"
 
 # and connect them
-mkmimo source_* \> sink_*
+mkmimo source_* \> sink_* 2>/dev/null
 
 # patch the tty as pv can mess up
 stty echo

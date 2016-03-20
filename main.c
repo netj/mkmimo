@@ -1,20 +1,20 @@
+#include "mkmimo.h"
+#include "mkmimo_multithreaded.h"
+#include "mkmimo_nonblocking.h"
+#include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/uio.h>
-#include <unistd.h>
-#include <poll.h>
 #include <time.h>
-#include <errno.h>
-#include "mkmimo.h"
-#include "mkmimo_nonblocking.h"
-#include "mkmimo_multithreaded.h"
+#include <unistd.h>
 
-// function pointer to the mkmimo implementation to use
+// Function pointer to the mkmimo implementation to use
 static int (*mkmimo)(Inputs *, Outputs *) = NULL;
 
 /* Declared externally in mkmimo.h */
@@ -58,7 +58,6 @@ static inline int open_inputs(char *argv[], Inputs *inputs, int num_in,
         .is_readable = 0,
         .is_buffered = 0,
     };
-
     inputs->inputs[i] = this;
   }
 
@@ -136,8 +135,8 @@ static inline void parse_environ(void) {
   // determine which implementation to use
   char *impl = getenv("MKMIMO_IMPL");
   if (impl == NULL) {
-    // use nonblocking implementation by default
-    mkmimo = mkmimo_nonblocking;
+    // use multithreaded implementation by default
+    mkmimo = mkmimo_multithreaded;
   } else if (!strcmp(impl, "nonblocking")) {
     mkmimo = mkmimo_nonblocking;
   } else if (!strcmp(impl, "multithreaded")) {
