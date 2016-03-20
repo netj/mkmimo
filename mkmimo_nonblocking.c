@@ -509,7 +509,7 @@ int mkmimo_nonblocking(Inputs *inputs, Outputs *outputs) {
 #ifdef _DARWIN_C_SOURCE
   signal(SIGINFO, print_state);
 #endif
-  signal(SIGQUIT, print_state);
+  signal(SIGUSR1, print_state);
 
   while (records_are_flowing_between(inputs, outputs)) {
     write_to_available(outputs);
