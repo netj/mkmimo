@@ -8,10 +8,7 @@ Queue *new_queue() {
   q->first = NULL;
   q->last = NULL;
   q->free = NULL;
-  CHECK_ERRNO(pthread_mutexattr_init, &(q->mutex_attr));
-  CHECK_ERRNO(pthread_mutexattr_settype, &(q->mutex_attr),
-              PTHREAD_MUTEX_ERRORCHECK);
-  CHECK_ERRNO(pthread_mutex_init, &(q->lock), &(q->mutex_attr));
+  CHECK_ERRNO(pthread_mutex_init, &(q->lock), NULL);
   CHECK_ERRNO(pthread_cond_init, &(q->is_non_empty), NULL);
   return q;
 }
