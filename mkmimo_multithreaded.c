@@ -233,11 +233,9 @@ static void *write_buffers_to_output(void *arg) {
   * pending output threads to flush all the buffered data.
   */
 static void *flush_remaining_data(void *arg) {
-  int num_buffers = *(int *)arg;
-  for (int i = 0; i < num_buffers; ++i) {
+  for (int i = 0;; ++i) {
     Buffer *empty = grab_empty_buffer();
-    DEBUG("Submitting an empty buffer to wake an output thread (%d remaining)",
-          num_buffers - 1 - i);
+    DEBUG("Submitting an empty buffer to wake an output thread (%d)", i);
     queue_and_signal(full_buffers, empty);
   }
   return NULL;
@@ -299,8 +297,7 @@ inline int mkmimo_multithreaded(Inputs *inputs, Outputs *outputs) {
   data_is_flowing_in = false;
   // Spawn a thread for waking up all pending output threads
   pthread_t flush_thread;
-  CHECK_ERRNO(pthread_create, &flush_thread, NULL, flush_remaining_data,
-              &num_buffers);
+  CHECK_ERRNO(pthread_create, &flush_thread, NULL, flush_remaining_data, NULL);
   // Wait for all output threads to finish writing the buffers
   for (int i = 0; i < outputs->num_outputs; i++) {
     DEBUG("Waiting for %s and %d more output threads to finish",
