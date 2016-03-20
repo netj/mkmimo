@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <time.h>
+#include <signal.h>
 
 // number of milliseconds for poll to wait for I/O events
 static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
