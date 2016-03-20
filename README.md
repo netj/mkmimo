@@ -143,6 +143,14 @@ To enumerate all tests:
 make test-list
 ```
 
+### Debugging
+
+To print debug statements, build with the debug flag:
+
+```bash
+make clean DEBUG=1
+```
+
 ### Formatting Code
 
 To format all code:
