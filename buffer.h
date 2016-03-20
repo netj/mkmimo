@@ -1,9 +1,7 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <sys/types.h>
 
 #define DEFAULT_BLOCKSIZE (4 * BUFSIZ)  // 4096
 extern int BLOCKSIZE;
@@ -17,6 +15,8 @@ typedef struct input_buffer {
 } Buffer;
 
 Buffer *new_buffer();
+void clear_buffer(Buffer *buf);
 void enlarge_buffer(Buffer *buf, size_t new_capacity);
+void move_trailing_data_after_last_record(Buffer *target, Buffer *source);
 
 #endif /* BUFFER_H */

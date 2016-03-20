@@ -4,6 +4,15 @@ compiler:
   - clang
   - gcc
 
+env:
+  global:
+    - BLOCKSIZE=4096
+  matrix:
+    -         MKMIMO_IMPL=multithreaded
+    -         MKMIMO_IMPL=nonblocking THROTTLE_SLEEP_MSEC=0 POLL_TIMEOUT_MSEC=
+    - DEBUG=1 MKMIMO_IMPL=multithreaded
+    - DEBUG=1 MKMIMO_IMPL=nonblocking THROTTLE_SLEEP_MSEC=0 POLL_TIMEOUT_MSEC=
+
 addons:
   apt:
     sources:
@@ -17,6 +26,7 @@ addons:
     - mawk
     - pv
     - clang-format-3.7
+    - gcc-5
 
 # Using GCE as pv is not whitelisted
 sudo: required
@@ -29,11 +39,13 @@ before_install:
   - sudo apt-get update -yq
   # required packages
   - sudo apt-get install -yq coreutils bc grep sed mawk pv clang-format-3.7
+  - case $CC in gcc) sudo apt-get install -yq gcc-5 ;; esac
   # code should be already formatted
   - make format CLANG_FORMAT=clang-format-3.7
   - test $(git status --porcelain | wc -l) -eq 0 || { git diff; false; }
 
 install:
+  - case $CC in gcc) CC=gcc-5 ;; esac
   - make
 
 script:

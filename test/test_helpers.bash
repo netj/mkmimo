@@ -21,7 +21,15 @@ teardown() {
 # sums up all `N bytes` printed by dd(1) from executing given command
 sum_dd_bytes() {
     {
-        "$@" 2>&1 | grep ' bytes' | awk '{print $1}' | tr '\n' +
+        "$@" 2>&1 | grep '^[0-9][0-9]* bytes \(.*\) copied, ' | awk '{print $1}' | tr '\n' +
         echo 0
     } | bc
+}
+
+allow_DEBUG_build_to_skip() {
+    if printenv DEBUG &>/dev/null; then
+        skip "DEBUG build"
+    else
+        false
+    fi
 }

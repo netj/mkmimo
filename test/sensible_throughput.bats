@@ -44,5 +44,5 @@ load test_helpers
     throughputSatisfactionPercentExpr="100 * $throughput / $expected_throughput"
     echo $throughputSatisfactionPercentExpr
     throughputSatisfactionPercent=$(bc <<<"$throughputSatisfactionPercentExpr")
-    [[ $throughputSatisfactionPercent -ge 50 ]]
+    [[ $throughputSatisfactionPercent -ge 50 ]] || allow_DEBUG_build_to_skip
 }
