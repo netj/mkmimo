@@ -1,3 +1,5 @@
 *.o
 *.d
 /mkmimo
+
+/node_modules
