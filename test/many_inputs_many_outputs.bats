@@ -3,7 +3,7 @@ load test_helpers
 
 @test "multi-input multi-output (17 inputs, 83 outputs)" {
     numins=17 numouts=83
-    numlines=1000000
+    numlines=10000
 
     # assemble process substitution commands for input/output
     inputs=

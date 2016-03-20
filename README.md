@@ -22,7 +22,7 @@ cmp -b <(seq $n) <(sort -n out.*)
 ### Many inputs, many outputs
 ```bash
 numins=17 numouts=83
-numlines=1000000
+numlines=10000
 
 inputs=
 for i in $(seq $numins)
