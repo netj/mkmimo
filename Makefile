@@ -25,7 +25,7 @@ HDRS += $(wildcard *.h)
 
 # generated files
 OBJS = $(SRCS:.c=.o)
-DEPS = $(SRCS:=.c=.d)
+DEPS = $(SRCS:.c=.d)
 
 ifeq ($(MKMIMO_IMPL),bash)
 $(PRGM): $(PRGM).sh
