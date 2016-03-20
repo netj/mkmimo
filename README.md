@@ -76,8 +76,9 @@ On OS X 10.11 (El Capitan), the way this implementation calls `poll(2)` is known
 
 This implementation is used when `MKMIMO_IMPL=nonblocking`, and the following environment variables are parsed:
 
-* `THROTTLE_SLEEP_MSEC` is the number of milliseconds to sleep between `poll(2)` system calls when no I/O streams were readable/writable.
-    It defaults to `0`, meaning it won't sleep and rather busy wait for maximum throughput at the expense of processor time.
+* `THROTTLE_SLEEP_USEC` is the number of microseconds to sleep between `poll(2)` system calls when no I/O streams were readable/writable.
+    It defaults to `1`, meaning it will sleep 1us upon such states.
+    Set it to 0 to rather busy wait for maximum throughput at the expense of processor time.
 
 * `POLL_TIMEOUT_MSEC` is the number of milliseconds to wait until any I/O activity is picked up by the `poll(2)` system call.
     On Mac, it defaults to 1000 or one second, because `poll(2)` does not pick up close events timely.

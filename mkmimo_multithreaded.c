@@ -5,7 +5,6 @@
 /**
  * Parameters
  */
-#define DEFAULT_MULTIBUFFERING 2  // double buffering
 static int MULTIBUFFERING = DEFAULT_MULTIBUFFERING;
 
 /**

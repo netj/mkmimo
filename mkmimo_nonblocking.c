@@ -5,16 +5,12 @@
 #include <sys/uio.h>
 #include <time.h>
 
-// when POLLHUP support is unreliable, use a timeout to detect input EOFs
-#ifdef POLLHUP_SUPPORT_UNRELIABLE
-#define DEFAULT_POLL_TIMEOUT_MSEC 1000 /* msec */
-#else
-#define DEFAULT_POLL_TIMEOUT_MSEC -1 /* wait indefinitely */
-#endif
+// number of milliseconds for poll to wait for I/O events
 static int POLL_TIMEOUT_MSEC = DEFAULT_POLL_TIMEOUT_MSEC;
 
-// when all output is busy, throttle down by sleeping this much interval
-#define DEFAULT_THROTTLE_SLEEP_USEC 100
+// number of microseconds to sleep when poll says no I/O can be done at this
+// step
+// (which shouldn't happen, but does happen on certain OS, e.g., OS X)
 static int THROTTLE_SLEEP_USEC = DEFAULT_THROTTLE_SLEEP_USEC;
 static struct timespec THROTTLE_TIMESPEC;
 

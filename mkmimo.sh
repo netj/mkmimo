@@ -6,12 +6,12 @@ shopt -s nullglob
 : ${MKMIMO_TMPDIR:=/tmp}
 : ${MKMIMO_BUFFER_MAX_RECORDS:=10000}
 : ${MKMIMO_BUFFER_MAX_POOLED:=10}
-: ${THROTTLE_SLEEP_MSEC:=1}
+: ${THROTTLE_SLEEP_USEC:=1}
 
 MKMIMO_SESSION=$(mktemp -d "${MKMIMO_TMPDIR:-/tmp}"/mkmimo.XXXXXXX)
 trap 'rm -rf "$MKMIMO_SESSION"' EXIT
 export MKMIMO_BUFFER_MAX_POOLED
-export THROTTLE_SLEEP_SEC=$(bc <<<"oscale=4; $THROTTLE_SLEEP_MSEC / 1000")
+export THROTTLE_SLEEP_SEC=$(bc <<<"oscale=7; $THROTTLE_SLEEP_USEC / 1000000")
 
 # parse input/output arguments
 inputs=() outputs=()
